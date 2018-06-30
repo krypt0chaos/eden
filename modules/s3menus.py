@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 
 """ Sahana Eden Menu Structure and Layout
 
@@ -272,6 +273,7 @@ class S3MainMenu(object):
         if has_role("ADMIN"):
             translate = settings.has_module("translate")
             menu_admin = MM(name_nice, c="admin", **attr)(
+                                MM("Setup", c="setup"),
                                 MM("Settings", f="setting"),
                                 MM("Users", f="user"),
                                 MM("Person Registry", c="pr"),
@@ -441,11 +443,21 @@ class S3OptionsMenu(object):
 
         ADMIN = current.session.s3.system_roles.ADMIN
         settings_messaging = self.settings_messaging()
-        translate = current.deployment_settings.has_module("translate")
+
+        settings = current.deployment_settings
+        translate = settings.has_module("translate")
+        is_data_repository = lambda i: settings.get_sync_data_repository()
 
         # NB: Do not specify a controller for the main menu to allow
         #     re-use of this menu by other controllers
         return M(restrict=[ADMIN])(
+                    M("Setup", c="setup", f="deployment")(
+                        #M("Create", m="create"),
+                        #M("Servers", f="server")(
+                        #),
+                        #M("Instances", f="instance")(
+                        #),
+                    ),
                     M("Settings", c="admin", f="setting")(
                         settings_messaging,
                     ),
@@ -462,9 +474,16 @@ class S3OptionsMenu(object):
                         M("Raw Database access", c="appadmin", f="index")
                     ),
                     M("Error Tickets", c="admin", f="errors"),
+                    M("Monitoring", c="setup", f="server")(
+                        M("Checks", f="monitor_check"),
+                        M("Servers", f="server"),
+                        M("Tasks", f="monitor_task"),
+                        M("Logs", f="monitor_run"),
+                    ),
                     M("Synchronization", c="sync", f="index")(
                         M("Settings", f="config", args=[1], m="update"),
                         M("Repositories", f="repository"),
+                        M("Public Data Sets", f="dataset", check=is_data_repository),
                         M("Log", f="log"),
                     ),
                     #M("Edit Application", a="admin", c="default", f="design",
@@ -897,12 +916,15 @@ class S3OptionsMenu(object):
     def event():
         """ EVENT / Event Module """
 
-        if current.deployment_settings.get_event_label(): # == "Disaster"
+        settings = current.deployment_settings
+        if settings.get_event_label(): # == "Disaster"
             EVENTS = "Disasters"
             EVENT_TYPES = "Disaster Types"
         else:
             EVENTS = "Events"
             EVENT_TYPES = "Event Types"
+
+        incidents = lambda i: settings.get_event_incident()
 
         return M()(
                     #M("Scenarios", c="event", f="scenario")(
@@ -916,20 +938,23 @@ class S3OptionsMenu(object):
                         M("Create", m="create"),
                         #M("Import", m="import", p="create"),
                     ),
-                    M("Incidents", c="event", f="incident")(
+                    M("Incidents", c="event", f="incident",
+                      check=incidents)(
                         M("Create", m="create"),
                     ),
-                    M("Incident Reports", c="event", f="incident_report", m="summary")(
+                    M("Incident Reports", c="event", f="incident_report", m="summary",
+                      check=incidents)(
                         M("Create", m="create"),
                     ),
-                    M("Incident Types", c="event", f="incident_type")(
+                    M("Incident Types", c="event", f="incident_type",
+                      check=incidents)(
                         M("Create", m="create"),
                         #M("Import", m="import", p="create"),
                     ),
-                    #M("Situation Reports", c="event", f="sitrep")(
-                    #    M("Create", m="create"),
-                    #    #M("Import", m="import", p="create"),
-                    #),
+                    M("Situation Reports", c="event", f="sitrep")(
+                        M("Create", m="create"),
+                        #M("Import", m="import", p="create"),
+                    ),
                 )
 
     # -------------------------------------------------------------------------
@@ -1869,6 +1894,12 @@ class S3OptionsMenu(object):
                         M("Create", m="create"),
                     ),
                 )
+
+    # -------------------------------------------------------------------------
+    def setup(self):
+        """ Setup """
+
+        return self.admin()
 
     # -------------------------------------------------------------------------
     @staticmethod

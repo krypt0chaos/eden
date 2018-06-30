@@ -538,105 +538,80 @@ class S3FieldPath(object):
 
             return ktable, join, multiple, True
 
-        s3db = current.s3db
-        tablename = resource.tablename
-
-        # Try to attach the component
-        if alias not in resource.components and \
-           alias not in resource.links:
-            _alias = alias
-            hook = s3db.get_component(tablename, alias)
-            if not hook:
-                _alias = s3db.get_alias(tablename, alias)
-                if _alias:
-                    hook = s3db.get_component(tablename, _alias)
-            if hook:
-                resource._attach(_alias, hook)
-
-        components = resource.components
-        links = resource.links
-
-        if alias in components:
-
-            # Is a component
-            component = components[alias]
-
+        component = resource.components.get(alias)
+        if component:
+            # Component alias
             ktable = component.table
             join = component._join()
             multiple = component.multiple
-
-        elif alias in links:
-
-            # Is a linktable
-            link = links[alias]
-
-            ktable = link.table
-            join = link._join()
-
-        elif "_" in alias:
-
-            # Is a free join
-            DELETED = current.xml.DELETED
-
-            table = resource.table
+        else:
+            s3db = current.s3db
             tablename = resource.tablename
+            calias = s3db.get_alias(tablename, alias)
+            if calias:
+                # Link alias
+                component = resource.components.get(calias)
+                link = component.link
+                ktable = link.table
+                join = link._join()
+            elif "_" in alias:
+                # Free join
+                pkey = fkey = None
 
-            pkey = fkey = None
+                # Find the table
+                fkey, kname = (alias.split(":") + [None])[:2]
+                if not kname:
+                    fkey, kname = kname, fkey
+                ktable = s3db.table(kname,
+                                    AttributeError("table not found: %s" % kname),
+                                    db_only=True,
+                                    )
 
-            # Find the table
-            fkey, kname = (alias.split(":") + [None])[:2]
-            if not kname:
-                fkey, kname = kname, fkey
-
-            ktable = s3db.table(kname,
-                                AttributeError("table not found: %s" % kname),
-                                db_only=True)
-
-            if fkey is None:
-
-                # Autodetect left key
-                for fname in ktable.fields:
-                    tn, key = s3_get_foreign_key(ktable[fname], m2m=False)[:2]
-                    if not tn:
-                        continue
-                    if tn == tablename:
-                        if fkey is not None:
-                            raise SyntaxError("ambiguous foreign key in %s" %
-                                              alias)
-                        else:
-                            fkey = fname
-                            if key:
-                                pkey = key
                 if fkey is None:
-                    raise SyntaxError("no foreign key for %s in %s" %
-                                      (tablename, kname))
+                    # Autodetect left key
+                    for fname in ktable.fields:
+                        tn, key = s3_get_foreign_key(ktable[fname], m2m=False)[:2]
+                        if not tn:
+                            continue
+                        if tn == tablename:
+                            if fkey is not None:
+                                raise SyntaxError("ambiguous foreign key in %s" %
+                                                  alias)
+                            else:
+                                fkey = fname
+                                if key:
+                                    pkey = key
+                    if fkey is None:
+                        raise SyntaxError("no foreign key for %s in %s" %
+                                          (tablename, kname))
+
+                else:
+                    # Check left key
+                    if fkey not in ktable.fields:
+                        raise AttributeError("no field %s in %s" % (fkey, kname))
+
+                    tn, pkey = s3_get_foreign_key(ktable[fkey], m2m=False)[:2]
+                    if tn and tn != tablename:
+                        raise SyntaxError("%s.%s is not a foreign key for %s" %
+                                          (kname, fkey, tablename))
+                    elif not tn:
+                        raise SyntaxError("%s.%s is not a foreign key" %
+                                          (kname, fkey))
+
+                # Default primary key
+                table = resource.table
+                if pkey is None:
+                    pkey = table._id.name
+
+                # Build join
+                query = (table[pkey] == ktable[fkey])
+                DELETED = current.xml.DELETED
+                if DELETED in ktable.fields:
+                    query &= ktable[DELETED] != True
+                join = [ktable.on(query)]
 
             else:
-
-                # Check left key
-                if fkey not in ktable.fields:
-                    raise AttributeError("no field %s in %s" % (fkey, kname))
-
-                tn, pkey = s3_get_foreign_key(ktable[fkey], m2m=False)[:2]
-                if tn and tn != tablename:
-                    raise SyntaxError("%s.%s is not a foreign key for %s" %
-                                      (kname, fkey, tablename))
-                elif not tn:
-                    raise SyntaxError("%s.%s is not a foreign key" %
-                                      (kname, fkey))
-
-            # Default primary key
-            if pkey is None:
-                pkey = table._id.name
-
-            # Build join
-            query = (table[pkey] == ktable[fkey])
-            if DELETED in ktable.fields:
-                query &= ktable[DELETED] != True
-            join = [ktable.on(query)]
-
-        else:
-            raise SyntaxError("Invalid tablename: %s" % alias)
+                raise SyntaxError("Invalid tablename: %s" % alias)
 
         return ktable, join, multiple, True
 
@@ -1550,8 +1525,8 @@ class S3ResourceQuery(object):
                 rfield = 0
 
         query = query_bare(op, lfield, rfield)
-        if invert:
-            query = ~(query)
+        if invert and query is not None:
+            query = ~query
         return query
 
     # -------------------------------------------------------------------------
@@ -2208,6 +2183,8 @@ class S3ResourceQuery(object):
 class S3URLQuery(object):
     """ URL Query Parser """
 
+    FILTEROP = re.compile(r"__(?!link\.)([_a-z\!]+)$")
+
     # -------------------------------------------------------------------------
     @classmethod
     def parse(cls, resource, get_vars):
@@ -2332,30 +2309,55 @@ class S3URLQuery(object):
         return get_vars
 
     # -------------------------------------------------------------------------
-    @staticmethod
-    def parse_expression(key):
+    @classmethod
+    def parse_key(cls, key):
         """
-            Parse a URL expression
+            Parse a URL filter key
 
-            @param key: the key for the URL variable
-            @return: tuple (selectors, operator, invert)
+            @param key: the filter key
+
+            @return: tuple (selector, operator, invert)
         """
 
         if key[-1] == "!":
             invert = True
         else:
             invert = False
+
         fs = key.rstrip("!")
         op = None
-        if "__" in fs:
-            fs, op = fs.split("__", 1)
-            op = op.strip("_")
+
+        # Find the operator
+        m = cls.FILTEROP.search(fs)
+        if m:
+            op = m.group(0).strip("_")
+            fs = fs[:m.span(0)[0]]
+        else:
+            fs = fs.rstrip("_")
         if not op:
             op = "eq"
+
+        return fs, op, invert
+
+    # -------------------------------------------------------------------------
+    @classmethod
+    def parse_expression(cls, key):
+        """
+            Parse a URL filter key, separating multiple field selectors
+            if the key specifies alternatives
+
+            @param key: the filter key
+
+            @return: tuple ([field selectors], operator, invert)
+        """
+
+        fs, op, invert = cls.parse_key(key)
+
         if "|" in fs:
             selectors = [s for s in fs.split("|") if s]
         else:
             selectors = [fs]
+
         return selectors, op, invert
 
     # -------------------------------------------------------------------------

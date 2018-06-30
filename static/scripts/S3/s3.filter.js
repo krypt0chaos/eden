@@ -339,6 +339,11 @@ S3.search = {};
     };
 
     /**
+     * Regex for the operator in a filter expression
+     */
+    var FILTEROP = /__(?!link\.)([a-z_]+)$/;
+
+    /**
      * getCurrentFilters: retrieve all current filters
      *
      * - returns: [[key, value], [key, value], ...]
@@ -410,15 +415,20 @@ S3.search = {};
             $this = $(this);
             id = $this.attr('id');
             urlVar = $('#' + id + '-data').val();
-            operator = $("input:radio[name='" + id + "_filter']:checked").val();
 
-            var contains = /__contains$/;
-            var anyof = /__anyof$/;
-            if (operator == 'any' && urlVar.match(contains)) {
-                urlVar = urlVar.replace(contains, '__anyof');
-            } else if (operator == 'all' && urlVar.match(anyof)) {
-                urlVar = urlVar.replace(anyof, '__contains');
+            // Adjust urlVar for user-selected operator
+            operator = $("input:radio[name='" + id + "_filter']:checked").val();
+            switch(operator) {
+                case 'any':
+                    urlVar = urlVar.replace(/__contains$|__belongs$/, '__anyof');
+                    break;
+                case 'all':
+                    urlVar = urlVar.replace(/__anyof$|__belongs$/, '__contains');
+                    break;
+                default:
+                    break;
             }
+
             if (this.tagName.toLowerCase() == 'select') {
                 // Standard SELECT
                 value = '';
@@ -524,9 +534,9 @@ S3.search = {};
                     urlValue = isoFormat(jsDate);
                 if (end && $this.hasClass('end_date')) {
                     // end_date
-                    urlVar = urlVar.split('__')[0];
+                    var selector = urlVar.replace(FILTEROP, '');
                     // @ToDo: filterURL should AND multiple $filter into 1 (will be required when we have multiple $filter in a single page)
-                    queries.push(['$filter', '(' + urlVar + ' ' + operator + ' "' + urlValue + '") or (' + urlVar + ' eq None)']);
+                    queries.push(['$filter', '(' + selector + ' ' + operator + ' "' + urlValue + '") or (' + selector + ' eq None)']);
                 } else {
                     // Single field or start_date
                     queries.push([urlVar, urlValue]);
@@ -622,7 +632,8 @@ S3.search = {};
 
             var years = value - 0;
             if (value && !isNaN(years)) {
-                if (urlVar.split('__')[1] == 'gt') {
+                var m = urlVar.match(FILTEROP);
+                if (m && m[1] == 'gt') {
                     // Age in years is the same until one day before
                     // the next birthday, so must add one year here:
                     years += 1;
@@ -726,8 +737,8 @@ S3.search = {};
             expression = $('#' + id + '-data').val();
             var operator = $('input:radio[name="' + id + '_filter"]:checked').val();
             if (this.tagName && this.tagName.toLowerCase() == 'select') {
-                var refresh = false;
-                var selector = expression.split('__')[0];
+                var refresh = false,
+                    selector = expression.replace(FILTEROP, '');
                 if (q.hasOwnProperty(selector + '__eq')) {
                     values = q[selector + '__eq'];
                     refresh = true;
@@ -815,7 +826,7 @@ S3.search = {};
 
             var $this = $(this),
                 expression = $('#' + $this.attr('id') + '-data').val(),
-                selector = expression.split('__')[0],
+                selector = expression.replace(FILTEROP, ''),
                 values = false;
 
             if (q.hasOwnProperty(expression)) {
@@ -854,7 +865,7 @@ S3.search = {};
                     refresh = true;
                 } else
                 if (operator == 'any' || operator == 'all') {
-                    var selector = expression.split('__')[0];
+                    var selector = expression.replace(FILTEROP, '');
                     if (q.hasOwnProperty(selector + '__anyof')) {
                         values = q[selector + '__anyof'];
                         refresh = true;
@@ -2096,6 +2107,9 @@ S3.search = {};
             $(this).closest('form').trigger('optionChanged');
         });
         $('.options-filter, .location-filter, .date-filter-input, .age-filter-input, .map-filter').on('change.autosubmit', function () {
+            $(this).closest('form').trigger('optionChanged');
+        });
+        $('.s3-options-filter-anyall input[type="radio"]').on('change.autosubmit', function() {
             $(this).closest('form').trigger('optionChanged');
         });
         $('.hierarchy-filter').on('select.s3hierarchy', function() {

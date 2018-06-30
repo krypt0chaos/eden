@@ -1,14 +1,55 @@
 # -*- coding: utf-8 -*-
 
 # =============================================================================
-# Tasks to be callable async
+# Tasks to be callable async &/or on a Schedule
+# @ToDo: Rewrite a lot of these to use s3db_task or settings_task instead of
+#        having a lot of separate tasks defined here
 # =============================================================================
 
-tasks = {}
 has_module = settings.has_module
 
 # -----------------------------------------------------------------------------
-def maintenance(period="daily"):
+def dummy():
+    """
+        Dummy Task
+        - can be used to populate a table with a task_id
+    """
+    return
+
+# -----------------------------------------------------------------------------
+def s3db_task(function, user_id=None, **kwargs):
+    """
+        Generic Task
+        - can be used to call any s3db.function(**kwargs)
+        - saves having to create separate Tasks for many cases
+    """
+    if user_id:
+        # Authenticate
+        auth.s3_impersonate(user_id)
+    # Run the Task & return the result
+    result = s3db[function](**kwargs)
+    db.commit()
+    return result
+
+# -----------------------------------------------------------------------------
+def settings_task(taskname, user_id=None, **kwargs):
+    """
+        Generic Task
+        - can be used to call any settings.tasks.taskname(**kwargs)
+        - saves having to create separate Tasks for many cases
+    """
+    if user_id:
+        # Authenticate
+        auth.s3_impersonate(user_id)
+    task = settings.get_task(taskname)
+    if task:
+        # Run the Task & return the result
+        result = task(**kwargs)
+        db.commit()
+        return result
+
+# -----------------------------------------------------------------------------
+def maintenance(period = "daily"):
     """
         Run all maintenance tasks which should be done daily
         - these are read from the template
@@ -46,8 +87,6 @@ def maintenance(period="daily"):
 
     return result
 
-tasks["maintenance"] = maintenance
-
 # -----------------------------------------------------------------------------
 # GIS: always-enabled
 # -----------------------------------------------------------------------------
@@ -71,8 +110,6 @@ def gis_download_kml(record_id, filename, session_id_name, session_id,
     db.commit()
     return result
 
-tasks["gis_download_kml"] = gis_download_kml
-
 # -----------------------------------------------------------------------------
 def gis_update_location_tree(feature, user_id=None):
     """
@@ -91,25 +128,8 @@ def gis_update_location_tree(feature, user_id=None):
     db.commit()
     return path
 
-tasks["gis_update_location_tree"] = gis_update_location_tree
-
 # -----------------------------------------------------------------------------
 # Org: always-enabled
-# -----------------------------------------------------------------------------
-def org_facility_geojson(user_id=None):
-    """
-        Export GeoJSON[P] Of Facility data
-
-        @param user_id: calling request's auth.user.id or None
-    """
-    if user_id:
-        # Authenticate
-        auth.s3_impersonate(user_id)
-    # Run the Task & return the result
-    s3db.org_facility_geojson()
-
-tasks["org_facility_geojson"] = org_facility_geojson
-
 # -----------------------------------------------------------------------------
 def org_site_check(site_id, user_id=None):
     """ Check the Status for Sites """
@@ -124,7 +144,15 @@ def org_site_check(site_id, user_id=None):
         customise(site_id)
         db.commit()
 
-tasks["org_site_check"] = org_site_check
+# -----------------------------------------------------------------------------
+tasks = {"dummy": dummy,
+         "s3db_task": s3db_task,
+         "settings_task": settings_task,
+         "maintenance": maintenance,
+         "gis_download_kml": gis_download_kml,
+         "gis_update_location_tree": gis_update_location_tree,
+         "org_site_check": org_site_check,
+         }
 
 # -----------------------------------------------------------------------------
 # Optional Modules
@@ -147,27 +175,6 @@ if has_module("cap"):
                 sync.synchronize(row)
 
     tasks["cap_ftp_sync"] = cap_ftp_sync
-
-# -----------------------------------------------------------------------------
-if has_module("dc"):
-
-    # -------------------------------------------------------------------------
-    def dc_target_check(target_id, user_id=None):
-        """
-            Check whether Survey has been Approved/Rejected
-
-            @param target_id: Target record_id
-            @param user_id: calling request's auth.user.id or None
-        """
-        if user_id:
-            # Authenticate
-            auth.s3_impersonate(user_id)
-        # Run the Task & return the result
-        result = s3db.dc_target_check(target_id)
-        db.commit()
-        return result
-
-    tasks["dc_target_check"] = dc_target_check
 
 # -----------------------------------------------------------------------------
 if has_module("doc"):
@@ -260,27 +267,6 @@ if has_module("doc"):
     tasks["document_delete_index"] = document_delete_index
 
 # -----------------------------------------------------------------------------
-if has_module("hrm"):
-
-    # -------------------------------------------------------------------------
-    def hrm_training_event_survey(training_event_id, user_id=None):
-        """
-            Notify Event Organiser that they should consider sending out a Survey
-
-            @param training_event_id: (Training) Event record_id
-            @param user_id: calling request's auth.user.id or None
-        """
-        if user_id:
-            # Authenticate
-            auth.s3_impersonate(user_id)
-        # Run the Task & return the result
-        result = s3db.hrm_training_event_survey(training_event_id)
-        db.commit()
-        return result
-
-    tasks["hrm_training_event_survey"] = hrm_training_event_survey
-
-# -----------------------------------------------------------------------------
 if has_module("msg"):
 
     # -------------------------------------------------------------------------
@@ -295,6 +281,7 @@ if has_module("msg"):
         if user_id:
             # Authenticate
             auth.s3_impersonate(user_id)
+
         # Run the Task & return the result
         result = msg.process_outbox(contact_method)
         db.commit()
@@ -315,6 +302,7 @@ if has_module("msg"):
         if user_id:
             # Authenticate
             auth.s3_impersonate(user_id)
+
         # Run the Task & return the result
         result = msg.twitter_search(search_id)
         db.commit()
@@ -334,6 +322,7 @@ if has_module("msg"):
         if user_id:
             # Authenticate
             auth.s3_impersonate(user_id)
+
         # Run the Task & return the result
         result = msg.process_keygraph(search_id)
         db.commit()
@@ -348,6 +337,7 @@ if has_module("msg"):
         """
         if user_id:
             auth.s3_impersonate(user_id)
+
         # Run the Task & return the result
         result = msg.poll(tablename, channel_id)
         db.commit()
@@ -362,6 +352,7 @@ if has_module("msg"):
         """
         if user_id:
             auth.s3_impersonate(user_id)
+
         # Run the Task & return the result
         result = msg.parse(channel_id, function_name)
         db.commit()
@@ -406,6 +397,7 @@ if has_module("msg"):
         """
         if user_id:
             auth.s3_impersonate(user_id)
+
         notify = s3base.S3Notifications
         return notify.notify(resource_id)
 
@@ -421,6 +413,7 @@ if has_module("req"):
         if user_id:
             # Authenticate
             auth.s3_impersonate(user_id)
+
         # Run the Task & return the result
         result = s3db.req_add_from_template(req_id)
         db.commit()
@@ -431,136 +424,62 @@ if has_module("req"):
 # -----------------------------------------------------------------------------
 if has_module("setup"):
 
-    def deploy(playbook, private_key, host=["127.0.0.1"], only_tags="all", user_id=None):
+    def setup_run_playbook(playbook,
+                           hosts = ["127.0.0.1"],
+                           tags = None,
+                           private_key = None,
+                           user_id = None,
+                           ):
+        """
+            Run an Ansible Playbook
+            - to Deploy a new Eden instance
+        """
+        if user_id:
+            # Authenticate
+            auth.s3_impersonate(user_id)
 
-        pb = s3db.setup_create_playbook(playbook, host, private_key, only_tags)
-        pb.run()
+        # Run the Task & return the result
+        result = s3db.setup_run_playbook(playbook, hosts, tags, private_key)
+        #db.commit()
+        return result
 
-        processed_hosts = sorted(pb.stats.processed.keys())
-
-        for h in processed_hosts:
-            t = pb.stats.summarize(h)
-            if t["failures"] > 0:
-                raise Exception("One of the tasks failed")
-            elif t["unreachable"] > 0:
-                raise Exception("Host unreachable")
-
-    tasks["deploy"] = deploy
+    tasks["setup_run_playbook"] = setup_run_playbook
 
     # -------------------------------------------------------------------------
-    def setup_management(_type, instance_id, deployment_id, user_id=None):
-        import ansible.runner
-        s3db = current.s3db
-        db = current.db
+    def setup_monitor_run_task(task_id, user_id=None):
+        """
+            Run a Monitoring Task
+        """
+        if user_id:
+            auth.s3_impersonate(user_id)
+        # Run the Task & return the result
+        result = s3db.setup_monitor_run_task(task_id)
+        db.commit()
+        return result
 
-        # Get all associated servers
-        stable = s3db.setup_server
-        servers = db(stable.deployment_id == deployment_id).select(stable.role,
-                                                                   stable.host_ip,
-                                                                   orderby = stable.role
-                                                                   )
+    tasks["setup_monitor_run_task"] = setup_monitor_run_task
 
-        # Get deployment
-        dtable = s3db.setup_deployment
-        deployment = db(dtable.id == deployment_id).select(dtable.private_key,
-                                                           dtable.remote_user,
-                                                           limitby = (0, 1)
-                                                           ).first()
-        private_key = os.path.join(current.request.folder, "uploads", deployment.private_key)
+    # -------------------------------------------------------------------------
+    def setup_monitor_check_email_reply(run_id, user_id=None):
+        """
+            Check whether we have received a reply to an Email check
+        """
+        if user_id:
+            auth.s3_impersonate(user_id)
+        # Run the Task & return the result
+        result = s3db.setup_monitor_check_email_reply(run_id)
+        db.commit()
+        return result
 
-        hosts = [server.host_ip for server in servers]
-        inventory = ansible.inventory.Inventory(hosts)
+    tasks["setup_monitor_check_email_reply"] = setup_monitor_check_email_reply
 
-        tasks = []
-        runner = ansible.runner.Runner
-
-        itable = s3db.setup_instance
-        instance = db(itable.id == instance_id).select(itable.type,
-                                                       limitby = (0, 1)
-                                                       ).first()
-        instance_types = ["prod", "test", "demo"]
-
-        if _type == "clean":
-
-            host_ip = servers[0].host_ip
-
-            arguments = [dict(module_name = "service",
-                              module_args = {"name": "uwsgi",
-                                             "status": "stop",
-                                             },
-                              remote_user = deployment.remote_user,
-                              private_key_file = private_key,
-                              pattern = host_ip,
-                              inventory = inventory,
-                              #sudo = True
-                              ),
-                          dict(module_name = "command",
-                              module_args = "clean %s" % instance_types[instance.type - 1],
-                              remote_user = deployment.remote_user,
-                              private_key_file = private_key,
-                              pattern = host_ip,
-                              inventory = inventory,
-                              #sudo = True
-                              ),
-                          dict(module_name = "command",
-                              module_args = "clean_eden %s" % instance_types[instance.type - 1],
-                              remote_user = deployment.remote_user,
-                              private_key_file = private_key,
-                              pattern = servers[0].host_ip,
-                              inventory = inventory,
-                              #sudo = True
-                              ),
-                          dict(module_name = "service",
-                              module_args = {"name": "uwsgi",
-                                             "status": "start",
-                                             },
-                              remote_user = deployment.remote_user,
-                              private_key_file = private_key,
-                              pattern = host_ip,
-                              inventory = inventory,
-                              #sudo = True
-                              ),
-                          ]
-
-            if len(servers) > 1:
-                host_ip = servers[2].host_ip
-                arguments[0]["pattern"] = host_ip
-                arguments[2]["pattern"] = host_ip
-                arguments[3]["pattern"] = host_ip
-
-            for argument in arguments:
-                tasks.append(runner(**argument))
-
-            # Run the tasks
-            for task in tasks:
-                response = task.run()
-                if response["dark"]:
-                    raise Exception("Error contacting the server")
-
-        elif _type == "eden":
-            argument = dict(module_name = "command",
-                            module_args = "pull %s" % [instance_types[instance.type - 1]],
-                            remote_user = deployment.remote_user,
-                            private_key_file = private_key,
-                            pattern = servers[0].host_ip,
-                            inventory = inventory,
-                            #sudo=True
-                            )
-
-            if len(servers) > 1:
-                argument["pattern"] = servers[2].host_ip
-
-            task = runner(**argument)
-            response = task.run()
-            if response["dark"]:
-                raise Exception("Error contacting the server")
-
-    tasks["setup_management"] = setup_management
 
 # -----------------------------------------------------------------------------
 if has_module("stats"):
 
-    def stats_demographic_update_aggregates(records=None, user_id=None):
+    def stats_demographic_update_aggregates(records = None,
+                                            user_id = None,
+                                            ):
         """
             Update the stats_demographic_aggregate table for the given
             stats_demographic_data record(s)
@@ -572,6 +491,7 @@ if has_module("stats"):
         if user_id:
             # Authenticate
             auth.s3_impersonate(user_id)
+
         # Run the Task & return the result
         result = s3db.stats_demographic_update_aggregates(records)
         db.commit()
@@ -585,7 +505,8 @@ if has_module("stats"):
                                                     parameter_id,
                                                     start_date,
                                                     end_date,
-                                                    user_id=None):
+                                                    user_id = None,
+                                                    ):
         """
             Update the stats_demographic_aggregate table for the given location and parameter
             - called from within stats_demographic_update_aggregates
@@ -600,6 +521,7 @@ if has_module("stats"):
         if user_id:
             # Authenticate
             auth.s3_impersonate(user_id)
+
         # Run the Task & return the result
         result = s3db.stats_demographic_update_location_aggregate(location_level,
                                                                   root_location_id,
@@ -617,7 +539,10 @@ if has_module("stats"):
     # --------------------e----------------------------------------------------
     if has_module("disease"):
 
-        def disease_stats_update_aggregates(records=None, all=False, user_id=None):
+        def disease_stats_update_aggregates(records = None,
+                                            all = False,
+                                            user_id = None,
+                                            ):
             """
                 Update the disease_stats_aggregate table for the given
                 disease_stats_data record(s)
@@ -629,6 +554,7 @@ if has_module("stats"):
             if user_id:
                 # Authenticate
                 auth.s3_impersonate(user_id)
+
             # Run the Task & return the result
             result = s3db.disease_stats_update_aggregates(records, all)
             db.commit()
@@ -641,7 +567,8 @@ if has_module("stats"):
                                                      children,
                                                      parameter_id,
                                                      dates,
-                                                     user_id=None):
+                                                     user_id = None,
+                                                     ):
             """
                 Update the disease_stats_aggregate table for the given location and parameter
                 - called from within disease_stats_update_aggregates
@@ -655,6 +582,7 @@ if has_module("stats"):
             if user_id:
                 # Authenticate
                 auth.s3_impersonate(user_id)
+
             # Run the Task & return the result
             result = s3db.disease_stats_update_location_aggregates(location_id,
                                                                    children,
@@ -682,6 +610,7 @@ if has_module("stats"):
             if user_id:
                 # Authenticate
                 auth.s3_impersonate(user_id)
+
             # Run the Task & return the result
             result = s3db.vulnerability_update_aggregates(records)
             db.commit()
@@ -695,7 +624,8 @@ if has_module("stats"):
                                                     parameter_id,
                                                     start_date,
                                                     end_date,
-                                                    user_id=None):
+                                                    user_id = None,
+                                                    ):
             """
                 Update the vulnerability_aggregate table for the given location and parameter
                 - called from within vulnerability_update_aggregates
@@ -710,6 +640,7 @@ if has_module("stats"):
             if user_id:
                 # Authenticate
                 auth.s3_impersonate(user_id)
+
             # Run the Task & return the result
             result = s3db.vulnerability_update_location_aggregate(#location_level,
                                                                   root_location_id,
@@ -729,8 +660,9 @@ if has_module("sync"):
         """
             Run all tasks for a repository, to be called from scheduler
         """
-
-        auth.s3_impersonate(user_id)
+        if user_id:
+            # Authenticate
+            auth.s3_impersonate(user_id)
 
         rtable = s3db.sync_repository
         query = (rtable.deleted != True) & \
@@ -771,7 +703,7 @@ current.s3task = s3task
 # Reusable field for scheduler task links
 scheduler_task_id = S3ReusableField("scheduler_task_id",
                                     "reference %s" % s3base.S3Task.TASK_TABLENAME,
-                                    ondelete="CASCADE")
+                                    ondelete = "CASCADE")
 s3.scheduler_task_id = scheduler_task_id
 
 # END =========================================================================

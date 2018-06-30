@@ -4,15 +4,12 @@
     Admin Controllers
 """
 
-module = request.controller
-resourcename = request.function
-
 # S3 framework functions
 # -----------------------------------------------------------------------------
 def index():
     """ Module's Home Page """
 
-    module_name = settings.modules[module].name_nice
+    module_name = settings.modules["admin"].name_nice
     response.title = module_name
     return dict(module_name=module_name)
 
@@ -37,7 +34,7 @@ def role():
     # ACLs as component of roles
     s3db.add_components("auth_group",
                         **{auth.permission.TABLENAME: "group_id"}
-                       )
+                        )
 
     def prep(r):
         if r.representation != "html":
@@ -169,17 +166,21 @@ def user():
 
     # Custom Methods
     set_method = s3db.set_method
-    set_method("auth", "user", method="roles",
-               action=s3base.S3RoleManager())
+    set_method("auth", "user",
+               method = "roles",
+               action = s3base.S3RoleManager())
 
-    set_method("auth", "user", method="disable",
-               action=disable_user)
+    set_method("auth", "user",
+               method = "disable",
+               action = disable_user)
 
-    set_method("auth", "user", method="approve",
-               action=approve_user)
+    set_method("auth", "user",
+               method = "approve",
+               action = approve_user)
 
-    set_method("auth", "user", method="link",
-               action=link_user)
+    set_method("auth", "user",
+               method = "link",
+               action = link_user)
 
     # CRUD Strings
     s3.crud_strings["auth_user"] = Storage(
@@ -253,6 +254,7 @@ def user():
                            listadd = False,
                            sortby = [[2, "asc"], [1, "asc"]],
                            )
+
         elif r.representation == "xls":
             lappend((T("Status"), "registration_key"))
 
@@ -266,6 +268,7 @@ def user():
 
         if r.http == "GET" and not r.method:
             session.s3.cancel = r.url()
+
         return True
     s3.prep = prep
 
@@ -277,24 +280,31 @@ def user():
                     (table.registration_key == "")
             rows = db(query).select(table.id)
             restrict = [str(row.id) for row in rows]
-            s3.actions = [dict(label=str(UPDATE), _class="action-btn",
-                               url=URL(c="admin", f="user",
-                                       args=["[id]", "update"])),
-                          dict(label=str(T("Roles")), _class="action-btn",
-                               url=URL(c="admin", f="user",
-                                       args=["[id]", "roles"])),
-                          dict(label=str(T("Disable")), _class="action-btn",
-                               url=URL(c="admin", f="user",
-                                       args=["[id]", "disable"]),
-                               restrict = restrict)
+            s3.actions = [{"label": s3_str(UPDATE),
+                           "url": URL(c="admin", f="user",
+                                      args=["[id]", "update"]),
+                           "_class": "action-btn",
+                           },
+                          {"label": s3_str(T("Roles")),
+                           "url": URL(c="admin", f="user",
+                                      args=["[id]", "roles"]),
+                           "_class": "action-btn",
+                           },
+                          {"label": s3_str(T("Disable")),
+                           "url": URL(c="admin", f="user",
+                                      args=["[id]", "disable"]),
+                           "_class": "action-btn",
+                           "restrict": restrict,
+                           },
                           ]
             if settings.get_auth_show_link():
-                s3.actions.insert(1, dict(label=str(T("Link")),
-                                          _class="action-btn",
-                                          _title = str(T("Link (or refresh link) between User, Person & HR Record")),
-                                          url=URL(c="admin", f="user",
-                                                  args=["[id]", "link"]),
-                                          restrict = restrict)
+                s3.actions.insert(1, {"label": s3_str(T("Link")),
+                                      "url": URL(c="admin", f="user",
+                                                 args=["[id]", "link"]),
+                                      "_class": "action-btn",
+                                      "_title": s3_str(T("Link (or refresh link) between User, Person & HR Record")),
+                                      "restrict": restrict,
+                                      }
                                   )
             # Only show the approve button if the user is currently pending
             query = (table.registration_key != "disabled") & \
@@ -316,10 +326,10 @@ def user():
             s3.dataTableStyleAlert = [str(row.id) for row in rows if row.registration_key == "pending"]
 
             # Translate the status values
-            values = [dict(col=6, key="", display=str(T("Active"))),
-                      dict(col=6, key="None", display=str(T("Active"))),
-                      dict(col=6, key="pending", display=str(T("Pending"))),
-                      dict(col=6, key="disabled", display=str(T("Disabled")))
+            values = [{"col": 6, "key": "", "display": s3_str(T("Active"))},
+                      {"col": 6, "key": "None", "display": s3_str(T("Active"))},
+                      {"col": 6, "key": "pending", "display": s3_str(T("Pending"))},
+                      {"col": 6, "key": "disabled", "display": s3_str(T("Disabled"))}
                       ]
             s3.dataTableDisplay = values
 
@@ -413,7 +423,7 @@ def group():
         msg_list_empty = T("No Roles defined"))
 
     s3db.configure(tablename, main="role")
-    return s3_rest_controller("auth", resourcename)
+    return s3_rest_controller("auth", "group")
 
 # -----------------------------------------------------------------------------
 @auth.s3_requires_membership(1)
@@ -424,7 +434,6 @@ def organisation():
         @ToDo: Prevent multiple records for the same domain
     """
 
-    module = "auth"
     tablename = "auth_organisation"
     table = s3db[tablename]
 
@@ -441,8 +450,7 @@ def organisation():
         msg_list_empty = T("No Organization Domains currently registered")
     )
 
-    output = s3_rest_controller(module, resourcename)
-
+    output = s3_rest_controller("auth", "organisation")
     return output
 
 # -----------------------------------------------------------------------------
@@ -460,9 +468,6 @@ def acl():
         Preliminary controller for ACLs
         for testing purposes, not for production use!
     """
-
-    module = "s3"
-    name = "permission"
 
     table = auth.permission.table
     tablename = table._tablename
@@ -501,7 +506,7 @@ def acl():
         next = request.vars._next
         s3db.configure(tablename, delete_next=next)
 
-    output = s3_rest_controller(module, name)
+    output = s3_rest_controller("s3", "permission")
     return output
 
 # -----------------------------------------------------------------------------
@@ -567,30 +572,6 @@ def errors():
                      reverse=True)
 
     return dict(app=appname, tickets=tickets)
-
-# =============================================================================
-# Management scripts
-# =============================================================================
-@auth.s3_requires_membership(1)
-def clean():
-    """
-        Run an external script to clean this instance & reset to default values
-
-        visudo
-        web2py ALL=(ALL)NOPASSWD:/usr/local/bin/clean
-    """
-
-    from subprocess import check_call
-
-    instance = settings.get_instance_name()
-    try:
-        check_call(["sudo /usr/local/bin/clean %s" % instance], shell=True)
-    except:
-        import sys
-        error = sys.exc_info()[1]
-        status = current.xml.json_message(False, 400,
-                                          "Script cannot be run: %s" % error)
-        raise HTTP(400, body=status)
 
 # =============================================================================
 # Create portable app

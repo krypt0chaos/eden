@@ -22,7 +22,8 @@ def config(settings):
 
     # L10n (Localization) settings
     languages = OrderedDict([
-        ("en-US", "English"),
+        ("en-US", "English (US)"),
+        ("es-ES", "Spanish (Spain)"),
     ])
     settings.L10n.languages = languages
 
@@ -42,6 +43,5 @@ def config(settings):
     # Name of Method used to create bulletin
     # This may vary according to organisation implementing it
     settings.cap.form_bulletin = "form_ocd"
-
 
 # END =========================================================================

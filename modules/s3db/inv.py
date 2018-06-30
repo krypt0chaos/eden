@@ -237,10 +237,16 @@ class S3WarehouseModel(S3Model):
                      Field("capacity", "integer",
                            label = T("Capacity (m3)"),
                            represent = lambda v: v or NONE,
+                           requires = IS_EMPTY_OR(
+                                        IS_INT_IN_RANGE(0, None)
+                                        ),
                            ),
                      Field("free_capacity", "integer",
                            label = T("Free Capacity (m3)"),
                            represent = lambda v: v or NONE,
+                           requires = IS_EMPTY_OR(
+                                        IS_INT_IN_RANGE(0, None)
+                                        ),
                            ),
                      Field("contact",
                            label = T("Contact"),
@@ -456,7 +462,7 @@ class S3InventoryModel(S3Model):
                                 label = T("Quantity"),
                                 represent = lambda v: \
                                     IS_FLOAT_AMOUNT.represent(v, precision=2),
-                                requires = IS_FLOAT_IN_RANGE(0, None),
+                                requires = IS_FLOAT_AMOUNT(minimum=0.0),
                                 writable = False,
                                 ),
                           Field("bin", length=16,
@@ -1101,7 +1107,7 @@ class S3InventoryTrackingModel(S3Model):
                      person_id("recipient_id",
                                label = T("To Person"),
                                ondelete = "SET NULL",
-                               represent = self.pr_person_phone_represent,
+                               represent = self.pr_PersonRepresentContact(),
                                comment = self.pr_person_comment(child="recipient_id"),
                                ),
                      Field("transport_type",
@@ -1600,7 +1606,7 @@ class S3InventoryTrackingModel(S3Model):
                            label = T("Quantity"),
                            represent = lambda v, row=None: \
                             IS_FLOAT_AMOUNT.represent(v, precision=2),
-                           requires = IS_FLOAT_IN_RANGE(minimum=1),
+                           requires = IS_FLOAT_AMOUNT(minimum=1.0),
                            ),
                      s3_date(comment = DIV(_class="tooltip",
                                            _title="%s|%s" % \
@@ -1955,20 +1961,29 @@ $.filterOptionsS3({
 
         if hasattr(row, "inv_track_item"):
             row = row.inv_track_item
-
-        # Lookup Volume per item
-        table = current.s3db.supply_item
-        item = current.db(table.id == row.item_id).select(table.volume,
-                                                          limitby = (0, 1),
-                                                          ).first()
         try:
             quantity = row.quantity if not received else row.recv_quantity
         except AttributeError:
             # Not available
             return current.messages["NONE"]
 
+        # Lookup Volume per item
+        table = current.s3db.supply_item
+        try:
+            volume = current.db(table.id == row.item_id).select(
+                                                            table.volume,
+                                                            limitby = (0, 1),
+                                                            ).first().volume
+        except AttributeError:
+            # No (such) item
+            return current.messages["NONE"]
+
         # Return the total volume
-        return quantity * item.volume if quantity else 0
+        if quantity is not None and volume is not None:
+            return quantity * volume
+        else:
+            # Unknown
+            return current.messages["NONE"]
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -1977,20 +1992,29 @@ $.filterOptionsS3({
 
         if hasattr(row, "inv_track_item"):
             row = row.inv_track_item
-
-        # Lookup Weight per item
-        table = current.s3db.supply_item
-        item = current.db(table.id == row.item_id).select(table.weight,
-                                                          limitby = (0, 1),
-                                                          ).first()
         try:
             quantity = row.quantity if not received else row.recv_quantity
         except AttributeError:
             # Not available
             return current.messages["NONE"]
 
+        # Lookup Weight per item
+        table = current.s3db.supply_item
+        try:
+            weight = current.db(table.id == row.item_id).select(
+                                                            table.weight,
+                                                            limitby = (0, 1),
+                                                            ).first().weight
+        except AttributeError:
+            # No (such) item
+            return current.messages["NONE"]
+
         # Return the total weight
-        return quantity * item.weight if quantity else 0
+        if quantity is not None and weight is not None:
+            return quantity * weight
+        else:
+            # Unknown
+            return current.messages["NONE"]
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -3542,7 +3566,8 @@ S3.timeline.now="''', now.isoformat(), '''"
             return output
 
         else:
-            raise HTTP(501, "bad method")
+            r.error(405, current.ERROR.BAD_METHOD)
+
 # =============================================================================
 def inv_tabs(r):
     """
@@ -4460,12 +4485,14 @@ class S3InventoryAdjustModel(S3Model):
                      Field("old_quantity", "double", notnull=True,
                            default = 0,
                            label = T("Original Quantity"),
+                           represent = lambda v: \
+                                       IS_FLOAT_AMOUNT.represent(v, precision=2),
                            writable = False,
                            ),
                      Field("new_quantity", "double",
                            label = T("Revised Quantity"),
                            represent = self.qnty_adj_repr,
-                           requires = IS_NOT_EMPTY(),
+                           requires = IS_FLOAT_AMOUNT(minimum=0.0),
                            ),
                      Field("reason", "integer",
                            default = 1,
@@ -4565,9 +4592,10 @@ class S3InventoryAdjustModel(S3Model):
         """
 
         if value is None:
-            return B(value)
+            # We want the word "None" here, not just a bold dash
+            return B(T("None"))
         else:
-            return value
+            return IS_FLOAT_AMOUNT.represent(value, precision=2)
 
     # ---------------------------------------------------------------------
     @staticmethod

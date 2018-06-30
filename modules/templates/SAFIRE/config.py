@@ -2,7 +2,7 @@
 
 from collections import OrderedDict
 
-from gluon import current
+from gluon import current, URL
 from gluon.storage import Storage
 
 def config(settings):
@@ -21,8 +21,8 @@ def config(settings):
     settings.base.system_name_short = T("SAFIRE")
 
     # PrePopulate data
-    #settings.base.prepopulate = ("skeleton", "default/users")
-    settings.base.prepopulate += ("SAFIRE", "default/users", "SAFIRE/Demo")
+    settings.base.prepopulate += ("SAFIRE",)
+    settings.base.prepopulate_demo += ("SAFIRE/Demo",)
 
     # Theme (folder to use for views/layout.html)
     #settings.base.theme = "SAFIRE"
@@ -39,10 +39,6 @@ def config(settings):
     # Approval emails get sent to all admins
     settings.mail.approver = "ADMIN"
 
-    # Restrict the Location Selector to just certain countries
-    # NB This can also be over-ridden for specific contexts later
-    # e.g. Activities filtered to those of parent Project
-    #settings.gis.countries = ("US",)
     # Uncomment to display the Map Legend as a floating DIV
     settings.gis.legend = "float"
     # Uncomment to Disable the Postcode selector in the LocationSelector
@@ -52,68 +48,11 @@ def config(settings):
     #settings.gis.print_button = True
 
     # L10n settings
-    # Languages used in the deployment (used for Language Toolbar, GIS Locations, etc)
-    # http://www.loc.gov/standards/iso639-2/php/code_list.php
-    #settings.L10n.languages = OrderedDict([
-    #    ("ar", "Arabic"),
-    #    ("bs", "Bosnian"),
-    #    #("dv", "Divehi"), # Maldives
-    #    ("en", "English"),
-    #    ("fr", "French"),
-    #    ("de", "German"),
-    #    ("el", "Greek"),
-    #    ("es", "Spanish"),
-    #    #("id", "Bahasa Indonesia"),
-    #    ("it", "Italian"),
-    #    ("ja", "Japanese"),
-    #    ("km", "Khmer"), # Cambodia
-    #    ("ko", "Korean"),
-    #    #("lo", "Lao"),
-    #    #("mg", "Malagasy"),
-    #    ("mn", "Mongolian"),
-    #    #("ms", "Malaysian"),
-    #    ("my", "Burmese"), # Myanmar
-    #    ("ne", "Nepali"),
-    #    ("prs", "Dari"), # Afghan Persian
-    #    ("ps", "Pashto"), # Afghanistan, Pakistan
-    #    ("pt", "Portuguese"),
-    #    ("pt-br", "Portuguese (Brazil)"),
-    #    ("ru", "Russian"),
-    #    ("tet", "Tetum"),
-    #    #("si", "Sinhala"), # Sri Lanka
-    #    #("ta", "Tamil"), # India, Sri Lanka
-    #    ("th", "Thai"),
-    #    ("tl", "Tagalog"), # Philippines
-    #    ("tr", "Turkish"),
-    #    ("ur", "Urdu"), # Pakistan
-    #    ("vi", "Vietnamese"),
-    #    ("zh-cn", "Chinese (Simplified)"), # Mainland China
-    #    ("zh-tw", "Chinese (Taiwan)"),
-    #])
-    # Default language for Language Toolbar (& GIS Locations in future)
-    #settings.L10n.default_language = "en"
-    # Uncomment to Hide the language toolbar
-    #settings.L10n.display_toolbar = False
-    # Default timezone for users
-    #settings.L10n.utc_offset = "+0100"
     # Number formats (defaults to ISO 31-0)
     # Decimal separator for numbers (defaults to ,)
     settings.L10n.decimal_separator = "."
     # Thousands separator for numbers (defaults to space)
     settings.L10n.thousands_separator = ","
-    # Uncomment this to Translate Layer Names
-    #settings.L10n.translate_gis_layer = True
-    # Uncomment this to Translate Location Names
-    #settings.L10n.translate_gis_location = True
-    # Uncomment this to Translate Organisation Names/Acronyms
-    #settings.L10n.translate_org_organisation = True
-    # Finance settings
-    #settings.fin.currencies = {
-    #    "EUR" : "Euros",
-    #    "GBP" : "Great British Pounds",
-    #    "USD" : "United States Dollars",
-    #}
-    #settings.fin.currency_default = "USD"
 
     # Security Policy
     # http://eden.sahanafoundation.org/wiki/S3AAA#System-widePolicy
@@ -319,6 +258,7 @@ def config(settings):
                         #(T("Equipment"), "asset"),
                         (T("Action Plan"), "plan"),
                         (T("Incident Reports"), "incident_report"),
+                        (T("Situation Reports"), "sitrep"),
                         ]
 
                 rheader_tabs = s3_rheader_tabs(r, tabs)
@@ -411,7 +351,7 @@ def config(settings):
     # -------------------------------------------------------------------------
     def customise_event_incident_report_controller(**attr):
 
-        from gluon import A, URL
+        from gluon import A
 
         s3 = current.response.s3
 
@@ -421,6 +361,8 @@ def config(settings):
             # Call standard postp
             if callable(standard_prep):
                 result = standard_prep(r)
+                if not result:
+                    return False
 
             if r.method in (None, "create"):
                 current.s3db.gis_location.addr_street.label = T("Street Address or Location Details")
@@ -462,25 +404,29 @@ def config(settings):
         s3db = current.s3db
         s3 = current.response.s3
 
-        # Load default model, so we can over-ride
-        s3db.event_incident
-
-        from gluon import URL
-        s3db.configure("event_incident",
-                       create_next = URL(c="event", f="incident",
-                                         args=["[id]", "plan"]),
-                       )
-
         # Custom prep
         standard_prep = s3.prep
         def custom_prep(r):
             # Call standard postp
             if callable(standard_prep):
                 result = standard_prep(r)
+                if not result:
+                    return False
+
+            resource = r.resource
+
+            # Redirect to action plan after create
+            resource.configure(create_next = URL(c="event", f="incident",
+                                                 args = ["[id]", "plan"]),
+                               )
 
             if r.method == "create":
                 incident_report_id = r.get_vars.get("incident_report_id")
                 if incident_report_id:
+                    # Got here from incident report assign => "New Incident"
+                    # - prepopulate incident name from report title
+                    # - copy incident type and location from report
+                    # - onaccept: link the incident report to the incident
                     if r.http == "GET":
                         from s3 import s3_truncate
                         rtable = s3db.event_incident_report
@@ -500,9 +446,8 @@ def config(settings):
                                                                        incident_report_id = incident_report_id,
                                                                        )
 
-                        r.resource.configure(create_onaccept = create_onaccept,
-                                             )
-
+                        resource.configure(create_onaccept = create_onaccept,
+                                           )
             return True
         s3.prep = custom_prep
 
@@ -579,11 +524,12 @@ def config(settings):
             # Call standard postp
             if callable(standard_prep):
                 result = standard_prep(r)
+                if not result:
+                    return False
 
             if r.method == "create"and r.http == "POST":
-                from gluon import URL
                 r.resource.configure(create_next = URL(c="event", f="scenario",
-                                                       args=["[id]", "plan"]),
+                                                       args = ["[id]", "plan"]),
                                      )
 
             return True

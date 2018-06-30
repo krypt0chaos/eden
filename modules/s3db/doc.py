@@ -80,12 +80,12 @@ class S3DocumentLibrary(S3Model):
                                cr_shelter = T("Shelter"),
                                deploy_mission = T("Mission"),
                                dc_response = T(settings.get_dc_response_label()),
-                               doc_sitrep = T("Situation Report"),
                                dvr_case = T("Case"),
                                dvr_case_activity = T("Case Activity"),
                                event_event = T("Event"),
                                event_incident = T("Incident"),
                                event_incident_report = T("Incident Report"),
+                               event_sitrep = T("Situation Report"),
                                fire_station = T("Fire Station"),
                                hms_hospital = T("Hospital"),
                                hrm_human_resource = T("Human Resource"),
@@ -93,7 +93,7 @@ class S3DocumentLibrary(S3Model):
                                inv_adj = T("Stock Adjustment"),
                                inv_warehouse = T("Warehouse"),
                                # @ToDo: Deprecate
-                               irs_ireport = T("Incident Report"),
+                               #irs_ireport = T("Incident Report"),
                                police_station = T("Police Station"),
                                pr_group = T("Team"),
                                project_project = T("Project"),
@@ -104,6 +104,7 @@ class S3DocumentLibrary(S3Model):
                                org_office = T("Office"),
                                org_facility = T("Facility"),
                                org_group = T("Organization Group"),
+                               req_need = T("Need"),
                                req_req = T("Request"),
                                security_seized_item = T("Seized Item"),
                                # @ToDo: Deprecate
@@ -130,7 +131,7 @@ class S3DocumentLibrary(S3Model):
         tablename = "doc_document"
         define_table(tablename,
                      # Instance
-                     self.stats_source_superlink,
+                     self.stats_source_superlink(),
                      # Component not instance
                      super_link(doc_id, "doc_entity"),
                      # @ToDo: Remove since Site Instances are doc entities?

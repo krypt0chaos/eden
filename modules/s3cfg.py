@@ -56,37 +56,85 @@ class S3Config(Storage):
                  }
 
     # Formats from static/scripts/ui/i18n converted to Python style
-    date_formats = {"ar": "%d/%m/%Y",
+    date_formats = {"af": "%d/%m/%Y",
+                    "ar": "%d/%m/%Y",
+                    "ar-dz": "%d/%m/%Y",
+                    "az": "%d.%m.%Y",
+                    "be": "%d.%m.%Y",
+                    "bg": "%d.%m.%Y",
                     "bs": "%d.%m.%Y",
+                    "ca": "%d/%m/%Y",
+                    "cs": "%d.%m.%Y",
+                    "cy-gb": "%d/%m/%Y",
+                    "da": "%d-%m-%Y",
                     "de": "%d.%m.%Y",
                     #"dv": "",
                     "el": "%d/%m/%Y",
+                    "eo": "%d/%m/%Y",
                     "es": "%d/%m/%Y",
+                    "et": "%d.%m.%Y",
+                    "eu": "%Y-%m-%d",
+                    "fa": "%Y/%m/%d",
+                    "fi": "%d.%m.%Y",
+                    "fo": "%d-%m-%Y",
                     "fr": "%d/%m/%Y",
+                    "fr-ca": "%Y-%m-%d",
+                    "fr-ch": "%d.%m.%Y",
+                    "gl": "%d/%m/%Y",
+                    "he": "%d/%m/%Y",
+                    "hi": "%d/%m/%Y",
                     "hr": "%d.%m.%Y",
+                    "hu": "%Y.%m.%d.",
+                    "hy": "%d.%m.%Y",
+                    "id": "%d/%m/%Y",
+                    "is": "%d.%m.%Y",
                     "it": "%d/%m/%Y",
                     "ja": "%Y/%m/%d",
+                    "ka": "%d-%m-%Y",
+                    "kk": "%d.%m.%Y",
                     "km": "%d-%m-%Y",
                     "ko": "%Y-%m-%d",
+                    "ky": "%d.%m.%Y",
+                    "lb": "%d.%m.%Y",
+                    "lt": "%Y-%m-%d",
+                    "lv": "%d.%m.%Y",
+                    "mk": "%d.%m.%Y",
+                    "ml": "%d/%m/%Y",
                     #"mn": "",
+                    "ms": "%d/%m/%Y",
                     #"my": "",
+                    "nb": "%d.%m.%Y",
                     "ne": "%d/%m/%Y",
+                    "nl": "%d-%m-%Y",
+                    "nl-be": "%d/%m/%Y",
+                    "nn": "%d.%m.%Y",
+                    "no": "%d.%m.%Y",
+                    "pl": "%d.%m.%Y",
                     "prs": "%Y/%m/%d",
                     "ps": "%Y/%m/%d",
                     "pt": "%d/%m/%Y",
                     "pt-br": "%d/%m/%Y",
+                    "rm": "%d/%m/%Y",
+                    "ro": "%d.%m.%Y",
                     "ru": "%d.%m.%Y",
                     #"si": "",
+                    "sk": "%d.%m.%Y",
+                    "sl": "%d.%m.%Y",
+                    "sq": "%d.%m.%Y",
                     "sr": "%d.%m.%Y",
+                    "sr-sr": "%d.%m.%Y",
                     "sv": "%Y-%m-%d",
                     "ta": "%d/%m/%Y",
                     #"tet": "",
                     "th": "%d/%m/%Y",
+                    "tj": "%d.%m.%Y",
                     #"tl": "",
                     "tr": "%d.%m.%Y",
+                    "uk": "%d.%m.%Y",
                     #"ur": "",
                     "vi": "%d/%m/%Y",
                     "zh-cn": "%Y-%m-%d",
+                    "zh-hk": "%Y-%m-%d",
                     "zh-tw": "%Y/%m/%d",
                     }
 
@@ -97,6 +145,7 @@ class S3Config(Storage):
     # Unifont can be downloaded from http://unifoundry.com/pub/unifont-7.0.06/font-builds/unifont-7.0.06.ttf
     fonts = {"ar": ["unifont", "unifont"],
              #"dv": ["unifont", "unifont"],
+             #"dz": ["unifont", "unifont"],
              "km": ["unifont", "unifont"],
              "ko": ["unifont", "unifont"],
              "mn": ["unifont", "unifont"],
@@ -118,6 +167,7 @@ class S3Config(Storage):
         self.base = Storage()
         # Allow templates to append rather than replace
         self.base.prepopulate = ["default/base"]
+        self.base.prepopulate_demo = ["default/users"]
         self.cap = Storage()
         self.cms = Storage()
         self.cr = Storage()
@@ -157,13 +207,15 @@ class S3Config(Storage):
         self.proc = Storage()
         self.project = Storage()
         self.req = Storage()
-        self.supply = Storage()
         self.search = Storage()
         self.security = Storage()
+        self.setup = Storage()
+        self.supply = Storage()
         self.sync = Storage()
+        self.tasks = Storage()
+        self.transport = Storage()
         self.ui = Storage()
         self.vulnerability = Storage()
-        self.transport = Storage()
         self.xforms = Storage()
 
         # Lazy property
@@ -418,13 +470,6 @@ class S3Config(Storage):
         return module_name in self.modules
 
     # -------------------------------------------------------------------------
-    def is_cd_version(self):
-        """
-            Whether we're running from a non-writable CD
-        """
-        return self.base.get("cd_version", False)
-
-    # -------------------------------------------------------------------------
     def get_google_analytics_tracking_id(self):
         """
             Google Analytics Key
@@ -437,6 +482,22 @@ class S3Config(Storage):
             List of YouTube IDs for the /default/video page
         """
         return self.base.get("youtube_id", [])
+
+    # -------------------------------------------------------------------------
+    def is_cd_version(self):
+        """
+            Whether we're running from a non-writable CD
+        """
+        return self.base.get("cd_version", False)
+
+    # -------------------------------------------------------------------------
+    # Tasks
+    # -------------------------------------------------------------------------
+    def get_task(self, taskname):
+        """
+            Ability to define custom Tasks in the Template
+        """
+        return self.tasks.get(taskname)
 
     # -------------------------------------------------------------------------
     # Authentication settings
@@ -602,26 +663,29 @@ class S3Config(Storage):
         " Make the selection of Organisation required during registration "
         return self.auth.get("registration_organisation_required", False)
 
+    def get_auth_registration_organisation_link_create(self):
+        """ Show a link to create new orgs in registration form """
+        return self.auth.get("registration_organisation_link_create", True)
+
     def get_auth_registration_organisation_hidden(self):
         " Hide the Organisation field in the registration form unless an email is entered which isn't whitelisted "
         return self.auth.get("registration_organisation_hidden", False)
 
     def get_auth_registration_organisation_default(self):
-        " Default the Organisation during registration "
-        return self.auth.get("registration_organisation_default")
-
-    def get_auth_registration_organisation_id_default(self):
         " Default the Organisation during registration - will return the organisation_id"
-        name = self.auth.get("registration_organisation_default")
-        if name:
-            otable = current.s3db.org_organisation
-            orow = current.db(otable.name == name).select(otable.id).first()
-            if orow:
-                organisation_id = orow.id
-            else:
-                organisation_id = otable.insert(name = name)
-        else:
-            organisation_id = None
+        organisation_id = self.__lazy("auth", "registration_organisation_default", default=None)
+        if organisation_id:
+            try:
+                int(organisation_id)
+            except:
+                # Must be a Name
+                table = current.s3db.org_organisation
+                row = current.db(table.name == organisation_id).select(table.id,
+                                                                       ).first()
+                if row:
+                    organisation_id = row.id
+                else:
+                    organisation_id = table.insert(name = name)
         return organisation_id
 
     def get_auth_registration_requests_organisation_group(self):
@@ -807,11 +871,6 @@ class S3Config(Storage):
 
     # -------------------------------------------------------------------------
     # Base settings
-    def get_instance_name(self):
-        """
-            Instance Name - for management scripts. e.g. prod or test
-        """
-        return self.base.get("instance_name", "")
     def get_system_name(self):
         """
             System Name - for the UI & Messaging
@@ -846,14 +905,11 @@ class S3Config(Storage):
 
     def get_base_prepopulate(self):
         """ Whether to prepopulate the database &, if so, which set of data to use for this """
-        base = self.base
-        setting = base.get("prepopulate", 1)
-        if setting:
-            options = base.get("prepopulate_options")
-            return self.resolve_profile(options, setting)
-        else:
-            # Pre-populate off (production mode), don't bother resolving
-            return 0
+        return self.base.get("prepopulate", 1)
+
+    def get_base_prepopulate_demo(self):
+        """For demo sites, which additional options to add to the list """
+        return self.base.get("prepopulate_demo", 0)
 
     def get_base_guided_tour(self):
         """ Whether the guided tours are enabled """
@@ -2426,8 +2482,7 @@ class S3Config(Storage):
 
     # =========================================================================
     # Search
-
-    # -------------------------------------------------------------------------
+    #
     def get_search_max_results(self):
         """
             The maximum number of results to return in an Autocomplete Search
@@ -2447,7 +2502,6 @@ class S3Config(Storage):
         """
         return self.search.get("dates_auto_range", False)
 
-    # -------------------------------------------------------------------------
     # Filter Manager Widget
     def get_search_filter_manager(self):
         """ Enable the filter manager widget """
@@ -2472,6 +2526,15 @@ class S3Config(Storage):
     def get_search_filter_manager_load(self):
         """ Text for saved filter load-button """
         return self.search.get("filter_manager_load")
+
+    # =========================================================================
+    # Setup
+    #
+    def get_setup_monitor_template(self):
+        """
+            Which template folder to use to load monitor.py
+        """
+        return self.setup.get("monitor_template", "default")
 
     # =========================================================================
     # Sync
@@ -2507,6 +2570,11 @@ class S3Config(Storage):
             identifier characters (like: ${placeholder}text).
         """
         return self.sync.get("upload_filename", "$s $r")
+
+    def get_sync_data_repository(self):
+        """ This deployment is a public data repository """
+
+        return self.sync.get("data_repository", False)
 
     # =========================================================================
     # Modules
@@ -3110,6 +3178,13 @@ class S3Config(Storage):
         """
         return self.dvr.get("case_activity_needs_multiple", False)
 
+    def get_dvr_case_include_activity_docs(self):
+        """
+            Documents-tab of beneficiaries includes case
+            activity attachments
+        """
+        return self.dvr.get("case_include_activity_docs", False)
+
     def get_dvr_needs_use_service_type(self):
         """
             Use service type in needs
@@ -3134,11 +3209,29 @@ class S3Config(Storage):
         """
         return self.dvr.get("manage_response_actions", False)
 
+    def get_dvr_response_types(self):
+        """
+            Use response type categories
+        """
+        return self.dvr.get("response_types", True)
+
     def get_dvr_response_types_hierarchical(self):
         """
             Response types are hierarchical
         """
         return self.dvr.get("response_types_hierarchical", False)
+
+    def get_dvr_response_themes(self):
+        """
+            Use themes for response actions
+        """
+        return self.dvr.get("response_themes", False)
+
+    def get_dvr_response_themes_org_specific(self):
+        """
+            Response themes are org-specific
+        """
+        return self.dvr.get("response_themes_org_specific", True)
 
     # -------------------------------------------------------------------------
     # Education
@@ -3159,6 +3252,12 @@ class S3Config(Storage):
             - valid options: "Disaster"
         """
         return self.event.get("label", None)
+
+    def get_event_incident(self):
+        """
+            Whether Events have Incidents
+        """
+        return self.event.get("incident", True)
 
     def get_event_cascade_delete_incidents(self):
         """
@@ -3213,18 +3312,6 @@ class S3Config(Storage):
         """
         return self.event.get("dc_target_tab", True)
 
-    def get_event_impact_tab(self):
-        """
-            Whether to show the impact tab for events
-        """
-        return self.event.get("impact_tab", True)
-
-    def get_incident_impact_tab(self):
-        """
-            Whether to show the impact tab for incidents
-        """
-        return self.event.get("incident_impact_tab", False)
-
     def get_event_dispatch_tab(self):
         """
             Whether to show the dispatch tab for events
@@ -3234,6 +3321,12 @@ class S3Config(Storage):
         else:
             return False
 
+    def get_event_impact_tab(self):
+        """
+            Whether to show the impact tab for events
+        """
+        return self.event.get("impact_tab", True)
+
     def get_incident_dispatch_tab(self):
         """
             Whether to show the dispatch tab for incidents
@@ -3242,6 +3335,12 @@ class S3Config(Storage):
             return self.event.get("incident_dispatch_tab", True)
         else:
             return False
+
+    def get_incident_impact_tab(self):
+        """
+            Whether to show the impact tab for incidents
+        """
+        return self.event.get("incident_impact_tab", False)
 
     def get_incident_teams_tab(self):
         """
@@ -4051,11 +4150,23 @@ class S3Config(Storage):
                         current.session.s3.default_site_id = default_site
         return default_site
 
+    def get_org_country(self):
+        """
+            Whether to expose the "country" field of organisations
+        """
+        return self.org.get("country", True)
+
     def get_org_sector(self):
         """
             Whether to use an Organization Sector field
         """
         return self.org.get("sector", False)
+
+    def get_org_sector_rheader(self):
+        """
+            Whether Sectors should be visible in the rheader
+        """
+        return self.org.get("sector_rheader", self.get_org_sector())
 
     def get_org_branches(self):
         """
@@ -4094,6 +4205,12 @@ class S3Config(Storage):
             Whether Organisation Types are Multiple or not
         """
         return self.org.get("organisation_types_multiple", False)
+
+    def get_org_organisation_type_rheader(self):
+        """
+            Whether Organisation Types are visible in the rheader
+        """
+        return self.org.get("organisation_type_rheader", False)
 
     def get_org_facilities_tab(self):
         """
@@ -4488,6 +4605,24 @@ class S3Config(Storage):
             Use Activities in Projects & Tasks
         """
         return self.project.get("activities", False)
+
+    def get_project_activity_beneficiaries(self):
+        """
+            Use Beneficiaries in Activities
+        """
+        setting = self.project.get("activity_beneficiaries", None)
+        if setting is None:
+            setting = self.has_module("stats")
+        return setting
+
+    def get_project_activity_items(self):
+        """
+            Use Items in Activities
+        """
+        setting = self.project.get("activity_items", None)
+        if setting is None:
+            setting = self.has_module("supply")
+        return setting
 
     def get_project_activity_sectors(self):
         """
@@ -4951,9 +5086,21 @@ class S3Config(Storage):
     # Supply
     #
     def get_supply_catalog_default(self):
-        return self.inv.get("catalog_default", "Default")
+        """
+            The name of the Default Item Catalog
+        """
+        return self.supply.get("catalog_default", "Default")
+
+    def get_supply_catalog_multi(self):
+        """
+            Whether to use Multiple Item Catalogs
+        """
+        return self.supply.get("catalog_multi", True)
 
     def get_supply_use_alt_name(self):
+        """
+            Whether to allow Alternative Items to be defined
+        """
         return self.supply.get("use_alt_name", True)
 
     # -------------------------------------------------------------------------
@@ -5027,96 +5174,6 @@ class S3Config(Storage):
     # -------------------------------------------------------------------------
     # Utilities
     #
-    def resolve_profile(self, options, setting, resolved=None):
-        """
-            Resolve option profile (e.g. prepopulate)
-
-            @param options: the template options as dict like:
-                            {"name": ("item1", "item2",...),...},
-                            The "mandatory" list will always be
-                            added, while the "default" list will
-                            be added only if setting is None.
-            @param setting: the active setting, as single item
-                            or tuple/list, items with a "template:"
-                            prefix (like "template:name") refer to
-                            the respective list in options
-            @param resolved: internal (for recursion)
-
-            @example:
-
-                # Template provides:
-                settings.base.prepopulate_options = {
-                    "mandatory": "locations/intl",
-                    "brazil": "locations/brazil",
-                    "germany": "locations/germany",
-                    "default": "default",
-                    "demo": ("template:default", "demo/users"),
-                }
-
-                # Set up a demo for Brazil:
-                settings.base.prepopulate = ("template:brazil", "template:demo")
-                # result:
-                ["locations/intl", "locations/brazil", "default", "demo/users"]
-
-                # Set up a production instance for Germany:
-                settings.base.prepopulate = ("template:germany", "template:default")
-                # result:
-                ["locations/intl", "locations/germany", "default"]
-
-                # Default setup:
-                settings.base.prepopulate = None
-                # result:
-                ["locations/intl", "default"]
-
-                # Custom options:
-                settings.base.prepopulate = ["template:demo", "IFRC/Train"]
-                # result:
-                ["locations/intl", "default", "demo/users", "IFRC/Train"]
-
-            @note: the result list is deduplicated, maintaining the original
-                   order by first occurrence
-        """
-
-        default = resolved is None
-        if default:
-            resolved = set()
-        seen = resolved.add
-
-        resolve = self.resolve_profile
-        result = []
-
-        def append(item):
-            if item not in resolved:
-                seen(item)
-                if isinstance(item, basestring) and item[:9] == "template:":
-                    if options:
-                        option = options.get(item[9:])
-                        if option:
-                            result.extend(resolve(options,
-                                                  option,
-                                                  resolved=resolved,
-                                                  ))
-                else:
-                    result.append(item)
-            return
-
-        if default:
-            if "default/base" in setting:
-                # Always first
-                append("default/base")
-            if options:
-                # Always second
-                append("template:mandatory")
-        if setting is not None:
-            if not isinstance(setting, (tuple, list)):
-                setting = (setting,)
-            for item in setting:
-                append(item)
-        elif default:
-            append("template:default")
-        return result
-
-    # -------------------------------------------------------------------------
     def __lazy(self, subset, key, default=None):
         """
             Resolve a "lazy" setting: when the config setting is callable,
