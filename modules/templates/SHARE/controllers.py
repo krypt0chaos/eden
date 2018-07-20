@@ -2,12 +2,11 @@
 
 from gluon import *
 #from gluon import current
-from gluon.storage import Storage
+#from gluon.storage import Storage
 from s3 import s3_str, \
                S3CustomController, \
                S3FilterForm, S3DateFilter, S3OptionsFilter, \
                S3Represent
-
 
 THEME = "SHARE"
 
@@ -15,30 +14,67 @@ THEME = "SHARE"
 class index(S3CustomController):
     """
         Custom Home Page
-        - simple CMS with links to Dashboard, etc
     """
 
     def __call__(self):
 
         T = current.T
+        db = current.db
+        s3db = current.s3db
 
         output = {}
 
-        output["active_events"] = DIV(H3("Southwest Monsoon May 2018"),
-                                      P("Water levels of main rivers are currently showing normal levels in many stations. However , one station is at Alert level in Kalu Ganga & Nilwala river falling slowly."),
-                                      HR(),
-                                      H3("Southwest Monsoon May 2018"),
-                                      P("Water levels of main rivers are currently showing normal levels in many stations. However , one station is at Alert level in Kalu Ganga & Nilwala river falling slowly."),
-                                      HR(),
-                                      H3("Southwest Monsoon May 2018"),
-                                      P("Water levels of main rivers are currently showing normal levels in many stations. However , one station is at Alert level in Kalu Ganga & Nilwala river falling slowly."),
-                                      )
+        # Recent Updates
+        etable = s3db.event_event
+        stable = s3db.event_sitrep
+        query = (stable.deleted == False) & \
+                (stable.event_id == etable.id)
+        fields = [etable.name,
+                  stable.date,
+                  stable.summary,
+                  ]
+        language = current.session.s3.language
+        if language != current.deployment_settings.get_L10n_default_language():
+            ntable = s3db.event_event_name
+            left = ntable.on((ntable.event_id == etable.id) & \
+                             (ntable.language == language))
+            fields.append(ntable.name_l10n)
+        else:
+            left = None
+        sitreps = db(query).select(left = left,
+                                   limitby = (0, 3),
+                                   orderby = ~stable.date,
+                                   *fields
+                                   )
+        len_sitreps = len(sitreps)
+        if len_sitreps == 0:
+            from s3 import S3CRUD
+            recent_updates = DIV(S3CRUD.crud_string("event_sitrep",
+                                                    "msg_list_empty"),
+                                 _class="empty")
+        else:
+            recent_updates = DIV()
+            rappend = recent_updates.append
+            count = 0
+            for s in sitreps:
+                count += 1
+                if left:
+                    event_name = s["event_event_name.name_l10n"] or s["event_event.name"]
+                else:
+                    event_name = s["event_event.name"]
+                rappend(H3(event_name))
+                rappend(P(s["event_sitrep.summary"]))
+                if count != len_sitreps:
+                    rappend(HR())
+
+        output["recent_updates"] = recent_updates
 
         map_btn = A(T("MAP OF CURRENT NEEDS"),
                     _href = URL(c="default",
                                 f="index",
                                 args="dashboard",
                                 ),
+                    _class = "small primary button",
                     )
 
         create_btn = A(T("CREATE A NEED"),
@@ -46,12 +82,12 @@ class index(S3CustomController):
                                    f="need",
                                    args="create",
                                    ),
+                       _class = "small primary button",
                        )
-                       
-        output["needs_btn"] = DIV(map_btn,
-                                  " | ",
-                                  create_btn,
-                                  _class = "button round",
+
+        output["needs_btn"] = DIV(SPAN(map_btn),
+                                  SPAN(create_btn),
+                                  _class="button-group radius",
                                   )
 
         output["about_btn"] = A("%s >" % T("Read More"),
@@ -85,7 +121,7 @@ class dashboard(S3CustomController):
         # Map to display needs
         ftable = s3db.gis_layer_feature
         query = (ftable.controller == "req") & \
-                (ftable.function == "need")
+                (ftable.function == "need_line")
         layer = current.db(query).select(ftable.layer_id,
                                          limitby=(0, 1)
                                          ).first()
@@ -101,13 +137,13 @@ class dashboard(S3CustomController):
                               "active"    : False,
                               }]
 
-        _map = current.gis.show_map(callback='''S3.search.s3map()''',
-                                    catalogue_layers=True,
-                                    collapsed=True,
-                                    feature_resources=feature_resources,
-                                    save=False,
-                                    search=True,
-                                    toolbar=True,
+        _map = current.gis.show_map(callback = '''S3.search.s3map()''',
+                                    catalogue_layers = True,
+                                    collapsed = True,
+                                    feature_resources = feature_resources,
+                                    save = False,
+                                    search = True,
+                                    toolbar = True,
                                     )
         output["_map"] = _map
 
@@ -171,7 +207,10 @@ class dashboard(S3CustomController):
 
 # =============================================================================
 class project_ActivityRepresent(S3Represent):
-    """ Representation of Activities by Organisation """
+    """
+        Representation of Activities by Organisation
+        - unused as we now use req_need_response instead
+    """
 
     def __init__(self,
                  show_link = True,
@@ -313,6 +352,159 @@ class req_NeedRepresent(S3Represent):
         else:
             # Fallback to name
             name = row["req_need.name"]
+            if name:
+                return s3_str(name)
+            else:
+                return current.messages["NONE"]
+
+# =============================================================================
+class req_NeedResponseRepresent(S3Represent):
+    """ Representation of Activity Groups by Organisation """
+
+    def __init__(self,
+                 show_link = True,
+                 multiple = False,
+                 ):
+
+        self.lookup_rows = self.custom_lookup_rows
+        self.org_represent = current.s3db.org_OrganisationRepresent() # show_link=False
+
+        super(project_ActivityRepresent,
+              self).__init__(lookup = "req_need_response",
+                             fields = ["req_need_response.name",
+                                       "req_need_response_organisation.organisation_id",
+                                       ],
+                             show_link = show_link,
+                             multiple = multiple,
+                             )
+
+    # -------------------------------------------------------------------------
+    def custom_lookup_rows(self, key, values, fields=None):
+        """
+            Custom lookup method for activity rows, does a
+            left join with the tag. Parameters
+            key and fields are not used, but are kept for API
+            compatibility reasons.
+
+            @param values: the activity group IDs
+        """
+
+        s3db = current.s3db
+        atable = s3db.req_need_response
+        aotable = s3db.req_need_response_organisation
+
+        left = aotable.on((aotable.need_response_id == atable.id) & \
+                          (aotable.role == 1))
+
+        qty = len(values)
+        if qty == 1:
+            query = (atable.id == values[0])
+            limitby = (0, 1)
+        else:
+            query = (atable.id.belongs(values))
+            limitby = (0, qty)
+
+        rows = current.db(query).select(atable.id,
+                                        atable.name,
+                                        aotable.organisation_id,
+                                        left=left,
+                                        limitby=limitby)
+        self.queries += 1
+        return rows
+
+    # -------------------------------------------------------------------------
+    def represent_row(self, row):
+        """
+            Represent a single Row
+
+            @param row: the req_need_response Row
+        """
+
+        # Custom Row (with the Orgs left-joined)
+        organisation_id = row["req_need_response_organisation.organisation_id"]
+        if organisation_id:
+            return self.org_represent(organisation_id)
+        else:
+            # Fallback to name
+            name = row["req_need_response.name"]
+            if name:
+                return s3_str(name)
+            else:
+                return current.messages["NONE"]
+
+# =============================================================================
+class req_NeedResponseLineRepresent(S3Represent):
+    """ Representation of Activities by Organisation """
+
+    def __init__(self,
+                 show_link = True,
+                 multiple = False,
+                 ):
+
+        self.lookup_rows = self.custom_lookup_rows
+        self.org_represent = current.s3db.org_OrganisationRepresent() # show_link=False
+
+        super(project_ActivityRepresent,
+              self).__init__(lookup = "req_need_response_line",
+                             fields = ["req_need_response.name",
+                                       "req_need_response_organisation.organisation_id",
+                                       ],
+                             show_link = show_link,
+                             multiple = multiple,
+                             )
+
+    # -------------------------------------------------------------------------
+    def custom_lookup_rows(self, key, values, fields=None):
+        """
+            Custom lookup method for activity rows, does a
+            left join with the tag. Parameters
+            key and fields are not used, but are kept for API
+            compatibility reasons.
+
+            @param values: the activity IDs
+        """
+
+        s3db = current.s3db
+        ltable = s3db.req_need_response_line
+        atable = s3db.req_need_response
+        aotable = s3db.req_need_response_organisation
+
+        left = [atable.on(atable.need_response_line_id == ltable.id),
+                aotable.on((aotable.need_response_id == atable.id) & \
+                          (aotable.role == 1))
+                ]
+
+        qty = len(values)
+        if qty == 1:
+            query = (ltable.id == values[0])
+            limitby = (0, 1)
+        else:
+            query = (ltable.id.belongs(values))
+            limitby = (0, qty)
+
+        rows = current.db(query).select(ltable.id,
+                                        atable.name,
+                                        aotable.organisation_id,
+                                        left=left,
+                                        limitby=limitby)
+        self.queries += 1
+        return rows
+
+    # -------------------------------------------------------------------------
+    def represent_row(self, row):
+        """
+            Represent a single Row
+
+            @param row: the req_need_response_line Row
+        """
+
+        # Custom Row (with the Orgs left-joined)
+        organisation_id = row["req_need_response_organisation.organisation_id"]
+        if organisation_id:
+            return self.org_represent(organisation_id)
+        else:
+            # Fallback to name
+            name = row["req_need_response.name"]
             if name:
                 return s3_str(name)
             else:
