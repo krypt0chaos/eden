@@ -2,3 +2,15 @@
   color: lime;
   font-weight: bold;
 }
+#filter-form.form-container form,
+#filter-form.form-container table {
+  background-color: #d0e8ff;
+}
+.cluster_legend {
+    font-size: 0.7rem;
+    padding-bottom: 0.2rem;
+}
+/* SitRep page wants a wider Summary column, which needs fixed layout */
+#sitrep .dataTable {
+    table-layout: fixed;
+}

@@ -35,7 +35,7 @@ $action_btn_fgcolor_alert: $action_btn_fgcolor !default;
 $action_btn_fgcolor_alert_hover: $action_btn_fgcolor_hover !default;
 
 // Disabled action buttons
-$action_btn_bgcolor_disabled: #c0c0c0 !default;
+$action_btn_bgcolor_disabled: rgba(192,192,192,0.25) !default;
 $action_btn_fgcolor_disabled: $action_btn_fgcolor_hover !default;
 
 // ============================================================================
@@ -120,6 +120,21 @@ $action_btn_fgcolor_disabled: $action_btn_fgcolor_hover !default;
     button.btn:hover {
         color: $action_btn_fgcolor_debug_hover;
         background: $action_btn_bgcolor_debug_hover;
+    }
+}
+
+/* Action links */
+.action-lnk {
+    margin-left: 0.6rem;
+    &:first-child {
+        margin-left: 0;
+    }
+}
+body.rtl .action-lnk {
+    margin-left: 0;
+    margin-right: 0.6rem;
+    &:first-child {
+        margin-right: 0;
     }
 }
 

@@ -19,6 +19,7 @@ def config(settings):
 
     # Theme (folder to use for views/layout.html)
     settings.base.theme = "SAMBRO.AlertHub"
+    settings.base.theme_base = "default"
 
     # L10n (Localization) settings
     languages = OrderedDict([
@@ -80,8 +81,8 @@ def config(settings):
         ("mi-NZ", "Maori (New Zealand)"),
         ("mt-MT", "Maltese (Malta)"),
         ("nb-NO", "Norwegian (Bokm?l) (Norway)"),
-        ("nl-BE", "Dutch (Belgium)"),
-        ("nl-NL", "Dutch (Netherlands)"),
+        ("ne-BE", "Dutch (Belgium)"),
+        ("ne-NL", "Dutch (Netherlands)"),
         ("nn-NO", "Norwegian (Nynorsk) (Norway)"),
         ("pl-PL", "Polish (Poland)"),
         ("pt-BR", "Portuguese (Brazil)"),
@@ -102,7 +103,7 @@ def config(settings):
         ("tl-PH", "Tagalog (Philippines)"),
         ("uk-UA", "Ukrainian (Ukraine)"),
         ("uz-UZ", "Uzbek (Uzbekistan)"),
-        ("zh-tw", "Chinese (Taiwan)"),
+        ("zh-TW", "Chinese (Taiwan)"),
     ])
     settings.L10n.languages = languages
 

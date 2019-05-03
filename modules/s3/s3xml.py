@@ -7,7 +7,7 @@
     @requires: U{B{I{gluon}} <http://web2py.com>}
     @requires: U{B{I{lxml}} <http://codespeak.net/lxml>}
 
-    @copyright: 2009-2018 (c) Sahana Software Foundation
+    @copyright: 2009-2019 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -48,10 +48,10 @@ except ImportError:
 from gluon import current, HTTP, URL, IS_EMPTY_OR
 from gluon.storage import Storage
 
-from s3codec import S3Codec
-from s3datetime import s3_decode_iso_datetime, s3_encode_iso_datetime, s3_utc
-from s3fields import S3RepresentLazy
-from s3utils import s3_get_foreign_key, s3_unicode, s3_strip_markup, s3_validate, s3_represent_value
+from .s3codec import S3Codec
+from .s3datetime import s3_decode_iso_datetime, s3_encode_iso_datetime, s3_utc
+from .s3fields import S3RepresentLazy
+from .s3utils import s3_get_foreign_key, s3_represent_value, s3_str, s3_strip_markup, s3_unicode, s3_validate
 
 ogetattr = object.__getattribute__
 
@@ -1383,15 +1383,16 @@ class S3XML(S3Codec):
         value = None
 
         try:
-            dt = s3_decode_iso_datetime(str(dtstr))
-            value = s3_utc(dt)
-        except:
+            dt = s3_decode_iso_datetime(s3_str(dtstr))
+        except ValueError:
             error = sys.exc_info()[1]
-        if error is None:
+        else:
+            value = s3_utc(dt)
             if field_type == "date":
                 value = value.date()
             elif field_type == "time":
                 value = value.time()
+
         return (value, error)
 
     # -------------------------------------------------------------------------
@@ -1744,7 +1745,7 @@ class S3XML(S3Codec):
                         for row in rows:
                             uids[str(row[key])] = row[UID]
                     if hierarchy:
-                        from s3hierarchy import S3Hierarchy
+                        from .s3hierarchy import S3Hierarchy
                         h = S3Hierarchy(ktablename)
                         if h.config:
                             for _id in ids:
@@ -2732,8 +2733,26 @@ class S3EntityResolver(etree.Resolver):
 
             if p.scheme in ("", "file"):
 
-                # Get the real path of the referenced file
-                path = os.path.realpath(os.path.join(p.netloc, p.path))
+                path = p.path.split("/")
+                is_drive_letter = lambda s: len(s) == 2 and s[1] == ":"
+
+                # Validate netloc
+                netloc = p.netloc
+                if is_drive_letter(netloc):
+                    path[0] = netloc
+                elif netloc not in ("", "localhost"):
+                    # File on a different host
+                    raise IOError('Illegal access to network file %s' % system_url)
+
+                # Translate the URL path into a file system path
+                if not path[0] and len(path) > 1:
+                    if is_drive_letter(path[1]):
+                        path = path[1:]
+                    else:
+                        path[0] = os.path.sep
+                if is_drive_letter(path[0]):
+                    path[0] = "%s%s" % (path[0], os.path.sep)
+                path = os.path.realpath(os.path.join(*path))
 
                 # Deny all access outside of app-local static-folder
                 static = os.path.realpath(os.path.join(current.request.folder, "static"))

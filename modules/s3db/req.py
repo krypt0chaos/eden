@@ -2,7 +2,7 @@
 
 """ Sahana Eden Request Model
 
-    @copyright: 2009-2018 (c) Sahana Software Foundation
+    @copyright: 2009-2019 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -123,8 +123,8 @@ class RequestPriorityStatusModel(S3Model):
             }
 
         req_status = S3ReusableField("req_status", "integer",
-                                     label = T("Request Status"),
                                      default = REQ_STATUS_NONE,
+                                     label = T("Request Status"),
                                      represent = S3Represent(options = req_status_opts),
                                      requires = IS_EMPTY_OR(
                                                     IS_IN_SET(req_status_opts,
@@ -1184,7 +1184,7 @@ $.filterOptionsS3({
                         pdf_header_padding = 12,
                         #pdf_footer = inv_recv_pdf_footer,
                         pdf_table_autogrow = "B",
-                        pdf_paper_alignment = "Landscape",
+                        pdf_orientation = "Landscape",
                         **attr
                         )
 
@@ -2446,7 +2446,6 @@ class RequestNeedsModel(S3Model):
                                             },
                             )
 
-
         # NB Only instance of this being used (SHARE) over-rides this to show the req_number
         represent = S3Represent(lookup = tablename,
                                 show_link = True,
@@ -2780,11 +2779,13 @@ class RequestNeedsLineModel(S3Model):
     """
 
     names = ("req_need_line",
+             "req_need_line_id",
              )
 
     def model(self):
 
         T = current.T
+        db = current.db
 
         if current.s3db.table("stats_demographic"):
             title = current.response.s3.crud_strings["stats_demographic"].label_create
@@ -2803,7 +2804,6 @@ class RequestNeedsLineModel(S3Model):
         tablename = "req_need_line"
         self.define_table(tablename,
                           self.req_need_id(empty = False),
-                          self.req_need_response_line_id(),
                           # A less precise location for this line
                           # Here to more easily allow multiple dropdowns within an Inline form
                           self.gis_location_id("coarse_location_id"),
@@ -2817,7 +2817,7 @@ class RequestNeedsLineModel(S3Model):
                                           represent = self.stats_parameter_represent,
                                           readable = True,
                                           writable = True,
-                                          empty = False,
+                                          #empty = False,
                                           comment = parameter_id_comment,
                                           ),
                           Field("value", "double",
@@ -2825,7 +2825,8 @@ class RequestNeedsLineModel(S3Model):
                                 #label = T("Number in Need"),
                                 represent = lambda v: \
                                     IS_FLOAT_AMOUNT.represent(v, precision=2),
-                                requires = IS_NOT_EMPTY(),
+                                requires = IS_EMPTY_OR(
+                                            IS_FLOAT_AMOUNT(minimum=1.0)),
                                 ),
                           Field("value_committed", "double",
                                 label = T("Number Committed"),
@@ -2861,9 +2862,9 @@ class RequestNeedsLineModel(S3Model):
                                 writable = False,
                                 ),
                           self.supply_item_category_id(),
-                          self.supply_item_id(empty = False,
-                                              # Default:
+                          self.supply_item_id(# Default:
                                               #ondelete = "RESTRICT",
+                                              requires = IS_EMPTY_OR(self.supply_item_id().requires),
                                               # Filter Item dropdown based on Category
                                               script = '''
 $.filterOptionsS3({
@@ -2875,7 +2876,8 @@ $.filterOptionsS3({
                                               # Don't use Auto-complete
                                               widget = None,
                                               ),
-                          self.supply_item_pack_id(),
+                          self.supply_item_pack_id(requires = IS_EMPTY_OR(self.supply_item_pack_id().requires),
+                                                   ),
                           Field("quantity", "double",
                                 label = T("Quantity"),
                                 #label = T("Quantity Requested"),
@@ -2924,10 +2926,31 @@ $.filterOptionsS3({
                                           ),
                           *s3_meta_fields())
 
+        # Components
+        self.add_components(tablename,
+                            req_need_response_line = "need_line_id",
+                            )
+
+        #represent = S3Represent(lookup=tablename)
+        need_line_id = S3ReusableField("need_line_id", "reference %s" % tablename,
+                                       label = T("Need"),
+                                       ondelete = "SET NULL",
+                                       #represent = represent,
+                                       requires = IS_EMPTY_OR(
+                                                    IS_ONE_OF(db, "req_need_line.id",
+                                                              #represent,
+                                                              #orderby="req_need_line.date",
+                                                              #sort=True,
+                                                              )),
+                                       sortby = "date",
+                                       )
+
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return {}
+        return {"req_need_line_id": need_line_id,
+                }
+
 
 # =============================================================================
 class RequestNeedsOrganisationModel(S3Model):
@@ -3135,9 +3158,11 @@ class RequestNeedsResponseModel(S3Model):
                                       ),
                           s3_comments("contact",
                                       label = T("Contact Details"),
+                                      comment = None,
                                       ),
                           s3_comments("address",
                                       label = T("Delivery Address"),
+                                      comment = None,
                                       ),
                           s3_comments(),
                           *s3_meta_fields())
@@ -3226,7 +3251,6 @@ class RequestNeedsResponseLineModel(S3Model):
     """
 
     names = ("req_need_response_line",
-             "req_need_response_line_id",
              )
 
     def model(self):
@@ -3254,6 +3278,7 @@ class RequestNeedsResponseLineModel(S3Model):
         tablename = "req_need_response_line"
         self.define_table(tablename,
                           self.req_need_response_id(),
+                          self.req_need_line_id(),
                           # A less precise location for this line
                           # Here to more easily allow multiple dropdowns within an Inline form
                           self.gis_location_id("coarse_location_id"),
@@ -3275,27 +3300,24 @@ class RequestNeedsResponseLineModel(S3Model):
                                           represent = self.stats_parameter_represent,
                                           readable = True,
                                           writable = True,
-                                          empty = False,
+                                          #empty = False,
                                           comment = parameter_id_comment,
                                           ),
-                          Field("value", "double",
+                          Field("value", "integer",
                                 label = T("Number Planned"),
                                 #label = T("Number in Need"),
-                                represent = lambda v: \
-                                    IS_FLOAT_AMOUNT.represent(v, precision=2),
-                                requires = IS_NOT_EMPTY(),
+                                represent = IS_INT_AMOUNT.represent,
+                                requires = IS_INT_IN_RANGE(0, None),
                                 ),
-                          Field("value_reached", "double",
+                          Field("value_reached", "integer",
                                 label = T("Number Reached"),
-                                represent = lambda v: \
-                                    IS_FLOAT_AMOUNT.represent(v, precision=2),
-                                requires = IS_EMPTY_OR(
-                                            IS_FLOAT_AMOUNT(minimum=1.0)),
+                                represent = IS_INT_AMOUNT.represent,
+                                requires = IS_INT_IN_RANGE(0, None),
                                 ),
                           self.supply_item_category_id(),
-                          self.supply_item_id(empty = False,
-                                              # Default:
+                          self.supply_item_id(# Default:
                                               #ondelete = "RESTRICT",
+                                              requires = IS_EMPTY_OR(self.supply_item_id().requires),
                                               # Filter Item dropdown based on Category
                                               script = '''
 $.filterOptionsS3({
@@ -3307,7 +3329,8 @@ $.filterOptionsS3({
                                               # Don't use Auto-complete
                                               widget = None,
                                               ),
-                          self.supply_item_pack_id(),
+                          self.supply_item_pack_id(requires = IS_EMPTY_OR(self.supply_item_pack_id().requires),
+                                                   ),
                           Field("quantity", "double",
                                 label = T("Quantity Planned"),
                                 represent = lambda v: \
@@ -3326,30 +3349,10 @@ $.filterOptionsS3({
                           s3_comments(),
                           *s3_meta_fields())
 
-
-        # NB Only instance of this being used (SHARE) over-rides this to show the Organisation
-        represent = S3Represent(lookup = tablename,
-                                fields = ["comments"],
-                                show_link = True,
-                                )
-        need_response_line_id = S3ReusableField("need_response_line_id", "reference %s" % tablename,
-                                                label = T("Activity"),
-                                                ondelete = "CASCADE",
-                                                represent = represent,
-                                                requires = IS_EMPTY_OR(
-                                                            IS_ONE_OF(db, "req_need_response_line.id",
-                                                                      represent,
-                                                                      orderby="req_need_response_line.date",
-                                                                      sort=True,
-                                                                      )),
-                                                sortby = "date",
-                                                )
-
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return {"req_need_response_line_id": need_response_line_id,
-                }
+        return {}
 
 # =============================================================================
 class RequestNeedsResponseOrganisationModel(S3Model):
@@ -3389,9 +3392,8 @@ class RequestNeedsResponseOrganisationModel(S3Model):
                                 requires = IS_EMPTY_OR(
                                             IS_IN_SET(project_organisation_roles)
                                             ),
-                                represent = lambda opt: \
-                                            project_organisation_roles.get(opt,
-                                                                           NONE)),
+                                represent = S3Represent(options=project_organisation_roles),
+                                ),
                           s3_comments(),
                           *s3_meta_fields())
 

@@ -62,12 +62,17 @@ class S3MainMenuLayout(S3NavigationItem):
                         if item.selected:
                             classes.append("active")
                         _class = " ".join(classes)
-                        return LI(A(item.label,
+                        icon = item.opts.icon
+                        if icon:
+                            label = LABEL(ICON(icon), item.label)
+                        else:
+                            label = item.label
+                        return LI(A(label,
                                     _href=item_url,
                                     _id=item.attr._id,
                                     ),
-                                    _class=_class,
-                                    )
+                                  _class=_class,
+                                  )
                     else:
                         # Submenu item
                         if isinstance(item.label, dict):
@@ -284,7 +289,7 @@ class S3OrgMenuLayout(S3NavigationItem):
         logo = IMG(_src = "/%s/static/themes/SHARE/img/logo_small.png" %
                           current.request.application,
                    _alt = name,
-                   _width=96,
+                   _width = 50,
                    )
 
         # Note: render using current.menu.org.render()[0] + current.menu.org.render()[1]

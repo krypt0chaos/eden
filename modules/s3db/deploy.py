@@ -2,7 +2,7 @@
 
 """ Sahana Eden Deployments Model
 
-    @copyright: 2011-2018 (c) Sahana Software Foundation
+    @copyright: 2011-2019 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -1471,10 +1471,9 @@ def deploy_mission_response_count(row):
     except AttributeError:
         return 0
 
-    db = current.db
-    table = db.deploy_response
+    table = current.s3db.deploy_response
     count = table.id.count()
-    row = db(table.mission_id == mission_id).select(count).first()
+    row = current.db(table.mission_id == mission_id).select(count).first()
     if row:
         return row[count]
     else:
@@ -1496,7 +1495,7 @@ def deploy_member_filters(status=False):
                             label = T("Name"),
                             ),
                S3OptionsFilter("organisation_id",
-                               filter = True,
+                               search = True,
                                hidden = True,
                                ),
                S3OptionsFilter("credential.job_title_id",
@@ -1523,7 +1522,7 @@ def deploy_member_filters(status=False):
         else:
             widgets.insert(1, S3OptionsFilter("organisation_id$region_id",
                                               widget = "multiselect",
-                                              filter = True,
+                                              search = True,
                                               ))
     if status:
         # Additional filter for roster status (default=active), allows

@@ -54,7 +54,7 @@
 //$action_btn_fgcolor_alert_hover: $action_btn_fgcolor_hover;
 
 // Disabled action buttons
-//$action_btn_bgcolor_disabled: #c0c0c0;
+//$action_btn_bgcolor_disabled: rgba(192,192,192,0.25);
 //$action_btn_fgcolor_disabled: $action_btn_fgcolor_hover;
 
 // ============================================================================
@@ -105,7 +105,7 @@
 
 // Render page titles with background color
 //$title_background: true;
-//$title_bgcolor: #f7f8f9;
+$title_bgcolor: #D0E8FF;
 
 // Throbber style [sunflower|simple]
 //$throbber_style: sunflower;
@@ -113,7 +113,7 @@
 // Footer
 $footer_bgcolor: $primary-color;
 $footer_fgcolor: white;
-$footer_min_height: 240px;
-$footer_top_margin: 0;
+/* $footer_min_height: 240px; */
+$footer_top_margin: 0.5rem;
 
 // END ============================================================================

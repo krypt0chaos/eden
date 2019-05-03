@@ -36,28 +36,35 @@ class S3MainMenu(default.S3MainMenu):
     def menu_modules(cls):
         """ Custom Modules Menu """
 
-        menu= [MM("Needs", c="req", f="need_line", m="summary")(
+        menu= [MM("", c="default", f="index", icon="home"),
+               MM("Needs", c="req", f="need_line", m="summary")(
                 #MM("Statistics",  m="report"),
                 #MM("Map", m="map"),
                 MM("View", c="req", f="need_line", m="summary"),
                 MM("Create", c="req", f="need", m="create", p="read"),
+                MM("Dashboard", c="req", f="need_line", m="map"),
                 ),
                MM("4W", c="req", f="need_response_line", m="summary")(
                 #MM("Statistics",  m="report"),
                 #MM("Map", m="map"),
                 MM("View", c="req", f="need_response_line", m="summary"),
                 MM("Create", c="req", f="need_response", m="create", p="read"),
+                MM("Dashboard", c="req", f="need_response_line", m="map"),
                 ),
-               MM("Situational Updates", c="event", f="sitrep"),
-               MM("Organizations", c="org", f="organisation")(
-                MM("Offices", c="org", f="office"),
-                MM("Facilities", c="org", f="facility"),
+               MM("Situational Updates", c="event", f="sitrep", m="summary"),
+               MM("Organizations", c="org", f="organisation", m="summary")(
+                #MM("Offices", c="org", f="office"),
+                MM("Facilities", c="org", f="facility", m="summary"),
                ),
-               MM("More", link=False)(
+               MM("About", c="default", f="about"),
+               MM("Help", c="default", f="help"),
+               MM("More", link=False,
+                  check = current.auth.s3_logged_in())(
+                MM("HCT Coordination Folders", c="pr", f="forum", args=[1, "post", "datalist"]),
                 MM("Documents", c="doc", f="document"),
                 MM("Disasters", c="event", f="event"),
                 MM("Items", c="supply", f="item"),
-                MM("Sectors", c="org", f="sector"),
+                MM("Sectors", c="org", f="sector"), #,check = current.auth.s3_logged_in()
                 #MM("Services", c="org", f="service"),
                 ),
                ]
@@ -174,63 +181,75 @@ class S3OptionsMenu(default.S3OptionsMenu):
         """ Events Module """
 
         if current.request.function == "sitrep":
-            return M()(
-                        M("Situational Updates", c="event", f="sitrep")(
-                            M("Create", m="create"),
-                        ),
-                    )
+            #return M()(
+            #            M("Situational Updates", c="event", f="sitrep")(
+            #                M("Create", m="create"),
+            #            ),
+            #        )
+            return None
         else:
             ADMIN = current.session.s3.system_roles.ADMIN
-            return M()(
-                        M("Disasters", c="event", f="event")(
+            if ADMIN:
+                return M()(M("Disasters", c="event", f="event")(
                             M("Create", m="create"),
-                        ),
-                        M("Disaster Types", c="event", f="event_type",
-                          restrict=[ADMIN])(
+                            ),
+                           M("Disaster Types", c="event", f="event_type")(
+                            #restrict=[ADMIN])(
                             M("Create", m="create"),
-                        ),
-                    )
+                            ),
+                           )
+            else:
+                return None
 
     # -------------------------------------------------------------------------
     @staticmethod
     def org():
         """ Organisation Registry """
 
-        ADMIN = current.session.s3.system_roles.ADMIN
+        #ADMIN = current.session.s3.system_roles.ADMIN
 
-        return M(c="org")(
-                    M("Organizations", f="organisation")(
-                        M("Create", m="create"),
-                        #M("Import", m="import")
-                    ),
-                    M("Offices", f="office")(
-                        M("Create", m="create"),
-                        M("Map", m="map"),
-                        #M("Import", m="import")
-                    ),
-                    M("Facilities", f="facility")(
-                        M("Create", m="create"),
-                        #M("Import", m="import"),
-                    ),
-                    M("Organization Types", f="organisation_type",
-                      restrict=[ADMIN])(
-                        M("Create", m="create"),
-                    ),
-                    M("Office Types", f="office_type",
-                      restrict=[ADMIN])(
-                        M("Create", m="create"),
-                    ),
-                    M("Facility Types", f="facility_type",
-                      restrict=[ADMIN])(
-                        M("Create", m="create"),
-                    ),
-                    M("Sectors", f="sector", restrict=[ADMIN])(
-                        M("Create", m="create"),
-                    ),
-                    #M("Services", f="service", restrict=[ADMIN])(
-                    #    M("Create", m="create"),
-                    #),
-                )
+        #return M(c="org")(
+        #            M("Organizations", f="organisation")(
+        #                M("Create", m="create"),
+        #                #M("Import", m="import")
+        #            ),
+        #            M("Offices", f="office")(
+        #                M("Create", m="create"),
+        #                M("Map", m="map"),
+        #                #M("Import", m="import")
+        #            ),
+        #            M("Facilities", f="facility")(
+        #                M("Create", m="create"),
+        #                #M("Import", m="import"),
+        #            ),
+        #            M("Organization Types", f="organisation_type",
+        #              restrict=[ADMIN])(
+        #                M("Create", m="create"),
+        #            ),
+        #            M("Office Types", f="office_type",
+        #              restrict=[ADMIN])(
+        #                M("Create", m="create"),
+        #            ),
+        #            M("Facility Types", f="facility_type",
+        #              restrict=[ADMIN])(
+        #                M("Create", m="create"),
+        #            ),
+        #            M("Sectors", f="sector", restrict=[ADMIN])(
+        #                M("Create", m="create"),
+        #            ),
+        #            #M("Services", f="service", restrict=[ADMIN])(
+        #            #    M("Create", m="create"),
+        #            #),
+        #        )
+
+        return None
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def pr():
+        """ Person Registry """
+
+        return None
 
     # -------------------------------------------------------------------------
     @staticmethod
