@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-{ 
+{
 "A location that specifies the geographic area for this region. This can be a location from the location hierarchy, or a 'group location', or a location that has a boundary for the area.": "یک موقعیت که منطقه جغرافیایی را برای این ساحه مشخص می کند. این یک موقعیت از سلسله موقعیت ها یا 'موقعیت گروپ' یا موقعیت است که دارای سرحد با منطقه می باشد.",
 "A volunteer is defined as active if they've participated in an average of 8 or more hours of Program work or Trainings per month in the last year": 'یک رضاکار فعال گفته می شود اگر حد اوسط در برنامه های کاری یا تربیوی 8 ساعته یا بیشتر از 8 ساعته در یک ماه در سال گذشته اشتراک کرده باشد.',
 "Acronym of the organization's name, eg. IFRC.": 'سر نام اسم موسسه برای مثال: IFRC',
@@ -1682,7 +1682,6 @@
 'Map Settings': 'ترتیبات نقشه',
 'Map Viewing Client': 'مشتری دیدن نقشه',
 'Map Zoom': 'زوم نقشه',
-'Map cannot display without prepop data!': 'نقشه بدون معلومات prepop نمایش داده نمی تواند',
 'Map has been copied and set as Default': 'نقشه کاپی شد و منحیث پیش فرض تنظیم گردید',
 'Map has been set as Default': 'نقشه منحیث پیش فرض تنظیم گردید',
 'Map is already your Default': 'نقشه قبلاً منحیث پیش فرض تعیین شده است',
@@ -2821,7 +2820,7 @@
 'There was a problem, sorry, please try again later.': 'یک مشکل بوجود آمد، متاسفانه، لطفاً کمی بعد تر دوباره امتحان نمایید',
 'These are the filters being used by the search.': 'این ها فلتر های هستند که توسط جستجو استعمال می شوند.',
 'These need to be added in Decimal Degrees.': 'این باید به درجات اعشاری اضافه شود',
-'This email-address is already registered.': 'این آدرس ایمیل قبلاً راجستر شده است',
+'This email address is already in use': 'این آدرس ایمیل قبلاً راجستر شده است',
 'This is appropriate if this level is under construction. To prevent accidental modification after this level is complete, this can be set to False.': 'این مناسب است اگر این سطح تحت ساختمان است. برای جلوگیری نمودن از تعریف تصادفی بعد از تکمیل این سطح، این را می توانید که False بسازید.',
 'This is normally edited using the Widget in the Style Tab in the Layer Properties on the Map.': 'این را می توان معمولاً با استفاده از ودجت در استایل در لایه مشخصات در نقشه تغییر دهید.',
 'This job has already been finished successfully.': 'این وظیفه قبلاً موفقانه به اتمام رسید',

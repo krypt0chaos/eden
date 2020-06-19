@@ -26,6 +26,8 @@ def config(settings):
 
     # Theme (folder to use for views/layout.html)
     #settings.base.theme = "skeleton"
+    # Custom Logo
+    #settings.ui.menu_logo = "/%s/static/themes/<templatename>/img/logo.png" % current.request.application
 
     # Authentication settings
     # Should users be allowed to register themselves?
@@ -35,6 +37,9 @@ def config(settings):
     # Do new users need to be approved by an administrator prior to being able to login?
     #settings.auth.registration_requires_approval = True
     #settings.auth.registration_requests_organisation = True
+    # Required for access to default realm permissions
+    #settings.auth.registration_link_user_to = ["staff"]
+    #settings.auth.registration_link_user_to_default = ["staff"]
 
     # Approval emails get sent to all admins
     settings.mail.approver = "ADMIN"
@@ -43,7 +48,7 @@ def config(settings):
     # NB This can also be over-ridden for specific contexts later
     # e.g. Activities filtered to those of parent Project
     #settings.gis.countries = ("US",)
-    # Uncomment to display the Map Legend as a floating DIV
+    # Uncomment to display the Map Legend as a floating DIV, so that it is visible on Summary Map
     settings.gis.legend = "float"
     # Uncomment to Disable the Postcode selector in the LocationSelector
     #settings.gis.postcode_selector = False # @ToDo: Vary by country (include in the gis_config!)
@@ -193,6 +198,7 @@ def config(settings):
             restricted = True,
             module_type = 1
         )),
+        # HRM is required for access to default realm permissions
         #("hrm", Storage(
         #    name_nice = T("Staff"),
         #    #description = "Human Resources Management",
@@ -273,8 +279,8 @@ def config(settings):
         #    restricted = True,
         #    module_type = 10
         #)),
-        #("dvr", Storage(
-        #   name_nice = T("Disaster Victim Registry"),
+        #("br", Storage(
+        #   name_nice = T("Beneficiary Registry"),
         #   #description = "Allow affected individuals & households to register to receive compensation and distributions",
         #   restricted = True,
         #   module_type = 10,

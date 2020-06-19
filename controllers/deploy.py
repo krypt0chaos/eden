@@ -176,6 +176,11 @@ def person():
     settings.hrm.use_skills = True
     settings.search.filter_manager = True
 
+    # Use Legacy table for unavailability
+    s3db.add_components("pr_person",
+                        deploy_unavailability = "person_id",
+                        )
+
     return s3db.hrm_person_controller(replace_option = None,
                                       csv_extra_fields = [
                                             # CSV column headers, so no T()
@@ -466,7 +471,7 @@ def alert_create_script():
     # @ToDo: Port to _compose_form
     table = s3db.msg_sms_webapi_channel
     gateway = db(table.enabled == True).select(table.max_length,
-                                               limitby=(0, 1)
+                                               limitby = (0, 1)
                                                ).first()
     if gateway:
         max_length = gateway.max_length
@@ -588,7 +593,7 @@ def alert():
             if r.component_name == "select":
                 s3.actions = [{"label": str(READ),
                                "url": URL(f="human_resource",
-                                          args=["[id]", "profile"],
+                                          args = ["[id]", "profile"],
                                           ),
                                "_class": "action-btn read",
                                }
@@ -597,8 +602,8 @@ def alert():
             if r.component_name == "recipient":
                 # Open should open the HR profile, not the link
                 open_url = URL(f="human_resource",
-                               args=["profile"],
-                               vars={"alert_recipient.id": "[id]"},
+                               args = ["profile"],
+                               vars = {"alert_recipient.id": "[id]"},
                                )
                 # Delete should delete the link, not the HR profile
                 delete_url = URL(f="alert",
@@ -769,10 +774,10 @@ def email_inbox():
             if authorised:
                 s3.rfooter = s3base.S3CRUD.crud_button(
                                         T("Link to Mission"),
-                                        _href=URL(f="email_inbox",
-                                                  args=[r.id, "select"],
-                                                  ),
-                                        _class="action-btn link",
+                                        _href = URL(f="email_inbox",
+                                                    args = [r.id, "select"],
+                                                    ),
+                                        _class = "action-btn link",
                                         )
         return output
     s3.postp = postp
@@ -856,8 +861,8 @@ def email_channel():
         if r.interactive and isinstance(output, dict) and \
            not s3task._is_alive():
             poll_btn = A(T("Poll"),
-                         _class="action-btn",
-                         _href=URL(args=[r.id, "poll"])
+                         _class = "action-btn",
+                         _href = URL(args=[r.id, "poll"])
                          )
             output["rheader"] = poll_btn
         return output
@@ -945,22 +950,24 @@ def twitter_channel():
             restrict_e = [str(row.id) for row in rows if not row.enabled]
             restrict_d = [str(row.id) for row in rows if row.enabled]
 
-            from s3 import s3_str
-            s3.actions += [dict(label=s3_str(T("Enable")),
-                                _class="action-btn",
-                                url=URL(args=["[id]", "enable"]),
-                                restrict = restrict_e),
-                           dict(label=s3_str(T("Disable")),
-                                _class="action-btn",
-                                url = URL(args = ["[id]", "disable"]),
-                                restrict = restrict_d),
+            s3.actions += [{"label": s3_str(T("Enable")),
+                            "_class": "action-btn",
+                            "url": URL(args=["[id]", "enable"]),
+                            "restrict": restrict_e,
+                            },
+                           {"label": s3_str(T("Disable")),
+                            "_class": "action-btn",
+                            "url": URL(args = ["[id]", "disable"]),
+                            "restrict": restrict_d,
+                            },
                            ]
             if not s3task._is_alive():
                 # No Scheduler Running
-                s3.actions += [dict(label=s3_str(T("Poll")),
-                                    _class="action-btn",
-                                    url = URL(args = ["[id]", "poll"]),
-                                    restrict = restrict_d)
+                s3.actions += [{"label": s3_str(T("Poll")),
+                                "_class": "action-btn",
+                                "url": URL(args = ["[id]", "poll"]),
+                                "restrict": restrict_d,
+                                },
                                ]
         return output
     s3.postp = postp

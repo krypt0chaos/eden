@@ -2,7 +2,7 @@
 
 """ S3 RESTful API
 
-    @copyright: 2009-2019 (c) Sahana Software Foundation
+    @copyright: 2009-2020 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -36,15 +36,11 @@ import json
 import os
 import re
 import sys
-import types
-try:
-    from cStringIO import StringIO    # Faster, where available
-except ImportError:
-    from StringIO import StringIO
 
 from gluon import current, redirect, HTTP, URL
 from gluon.storage import Storage
 
+from s3compat import PY2, CLASS_TYPES, StringIO, basestring, urlopen
 from .s3datetime import s3_parse_datetime
 from .s3resource import S3Resource
 from .s3utils import s3_get_extension, s3_keep_messages, s3_remove_last_record_id, s3_store_last_record_id, s3_str
@@ -63,17 +59,17 @@ class S3Request(object):
 
     # -------------------------------------------------------------------------
     def __init__(self,
-                 prefix=None,
-                 name=None,
-                 r=None,
-                 c=None,
-                 f=None,
-                 args=None,
-                 vars=None,
-                 extension=None,
-                 get_vars=None,
-                 post_vars=None,
-                 http=None):
+                 prefix = None,
+                 name = None,
+                 r = None,
+                 c = None,
+                 f = None,
+                 args = None,
+                 vars = None,
+                 extension = None,
+                 get_vars = None,
+                 post_vars = None,
+                 http = None):
         """
             Constructor
 
@@ -209,15 +205,15 @@ class S3Request(object):
             approved, unapproved = True, False
 
         self.resource = S3Resource(tablename,
-                                   id=self.id,
-                                   filter=_filter,
-                                   vars=get_vars,
-                                   components=components,
-                                   approved=approved,
-                                   unapproved=unapproved,
-                                   include_deleted=include_deleted,
-                                   context=True,
-                                   filter_component=component_name,
+                                   id = self.id,
+                                   filter = _filter,
+                                   vars = get_vars,
+                                   components = components,
+                                   approved = approved,
+                                   unapproved = unapproved,
+                                   include_deleted = include_deleted,
+                                   context = True,
+                                   filter_component = component_name,
                                    )
 
         self.tablename = self.resource.tablename
@@ -291,9 +287,9 @@ class S3Request(object):
     # Method handler configuration
     # -------------------------------------------------------------------------
     def set_handler(self, method, handler,
-                    http=None,
-                    representation=None,
-                    transform=False):
+                    http = None,
+                    representation = None,
+                    transform = False):
         """
             Set a method handler for this request
 
@@ -377,7 +373,7 @@ class S3Request(object):
             if handler is not None:
                 break
 
-        if isinstance(handler, (type, types.ClassType)):
+        if isinstance(handler, CLASS_TYPES):
             return handler()
         else:
             return handler
@@ -439,7 +435,7 @@ class S3Request(object):
 
         if handler is None:
             handler = resource.crud
-        if isinstance(handler, (type, types.ClassType)):
+        if isinstance(handler, CLASS_TYPES):
             handler = handler()
         return handler
 
@@ -532,22 +528,30 @@ class S3Request(object):
 
         # Retrieve filters from request body
         if content_type == "application/x-www-form-urlencoded":
-            # Read POST vars (from S3.gis.refreshLayer)
+            # Read POST vars (e.g. from S3.gis.refreshLayer)
             filters = self.post_vars
             decode = None
         elif mode == "ajax" or content_type[:10] != "multipart/":
-            # Read body JSON (from $.searchS3)
-            s = self.body
-            s.seek(0)
+            # Read body JSON (e.g. from $.searchS3)
+            body = self.body
+            body.seek(0)
+            if PY2:
+                s = body.read()
+            else:
+                # Decode request body (=bytes stream) into a str
+                # - json.load/loads do not accept bytes in Py3 before 3.6
+                # - minor performance advantage by avoiding the need for
+                #   json.loads to detect the encoding
+                s = body.read().decode("utf-8")
             try:
-                filters = json.load(s)
+                filters = json.loads(s)
             except ValueError:
                 filters = {}
             if not isinstance(filters, dict):
                 filters = {}
             decode = None
         else:
-            # Read POST vars JSON (from $.searchDownloadS3)
+            # Read POST vars JSON (e.g. from $.searchDownloadS3)
             filters = self.post_vars
             decode = json.loads
 
@@ -655,9 +659,9 @@ class S3Request(object):
         if not self.custom_action:
             action = current.s3db.get_method(self.prefix,
                                              self.name,
-                                             component_name=self.component_name,
-                                             method=self.method)
-            if isinstance(action, (type, types.ClassType)):
+                                             component_name = self.component_name,
+                                             method = self.method)
+            if isinstance(action, CLASS_TYPES):
                 self.custom_action = action()
             else:
                 self.custom_action = action
@@ -706,7 +710,7 @@ class S3Request(object):
                 if form:
                     if not hasattr(form, "errors"):
                         # Form embedded in a DIV together with other components
-                        form = form.elements('form', first_only=True)
+                        form = form.elements("form", first_only=True)
                         form = form[0] if form else None
                     if form and form.errors:
                         return output
@@ -752,7 +756,10 @@ class S3Request(object):
                     self.id = resource.get_id()
                     self.uid = resource.get_uid()
                 else:
-                    self.error(404, current.ERROR.BAD_RECORD)
+                    # Record not found => go to list
+                    self.error(404, current.ERROR.BAD_RECORD,
+                               next = self.url(id="", method=""),
+                               )
                 method = "read"
             else:
                 method = "list"
@@ -1028,10 +1035,9 @@ class S3Request(object):
                 except:
                     source = []
             elif fetchurls:
-                import urllib
                 try:
                     for u in fetchurls:
-                        source.append((u[0], urllib.urlopen(u[1])))
+                        source.append((u[0], urlopen(u[1])))
                 except:
                     source = []
             elif r.http != "GET":
@@ -1063,9 +1069,9 @@ class S3Request(object):
 
         # Transformation mode?
         if "xsltmode" in get_vars:
-            args = dict(xsltmode=get_vars["xsltmode"])
+            args = {"xsltmode": get_vars["xsltmode"]}
         else:
-            args = dict()
+            args = {}
         # These 3 options are called by gis.show_map() & read by the
         # GeoRSS Import stylesheet to populate the gis_cache table
         # Source URL: For GeoRSS/KML Feed caching
@@ -1798,7 +1804,7 @@ class S3Method(object):
             @return: output object to send to the view
         """
 
-        output = dict()
+        output = {}
         return output
 
     # -------------------------------------------------------------------------
@@ -2049,7 +2055,7 @@ class S3Method(object):
             @param get_vars: the URL vars as dict
         """
 
-        return Storage((k, v) for k, v in get_vars.iteritems()
+        return Storage((k, v) for k, v in get_vars.items()
                               if not REGEX_FILTER.match(k))
 
     # -------------------------------------------------------------------------
@@ -2085,15 +2091,17 @@ def s3_request(*args, **kwargs):
                                implements fallbacks
     """
 
+    catch_errors = kwargs.pop("catch_errors", True)
+
     error = None
     try:
         r = S3Request(*args, **kwargs)
     except (AttributeError, SyntaxError):
-        if kwargs.get("catch_errors") is False:
+        if catch_errors is False:
             raise
         error = 400
     except KeyError:
-        if kwargs.get("catch_errors") is False:
+        if catch_errors is False:
             raise
         error = 404
     if error:

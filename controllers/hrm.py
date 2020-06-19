@@ -5,7 +5,7 @@
 """
 
 module = request.controller
-resourcename = request.function
+#resourcename = request.function
 
 if not settings.has_module(module):
     raise HTTP(404, body="Module disabled: %s" % module)
@@ -108,20 +108,26 @@ def staff():
             if r.id:
                 if r.method not in ("profile", "delete"):
                     # Redirect to person controller
-                    vars = {"human_resource.id": r.id,
-                            "group": "staff"
-                            }
-                    args = [r.method]
+                    url_vars = {"human_resource.id": r.id,
+                                "group": "staff"
+                                }
+                    if r.method is not None:
+                        args = [r.method]
+                    else:
+                        args = []
                     if r.representation == "iframe":
-                        vars["format"] = "iframe"
-                        #args = [r.method]
-                    redirect(URL(f="person", vars=vars, args=args))
+                        url_vars["format"] = "iframe"
+                    redirect(URL(f="person",
+                                 args = args,
+                                 vars = url_vars,
+                                 ))
             else:
                 if r.method == "import":
                     # Redirect to person controller
                     redirect(URL(f="person",
-                                 args="import",
-                                 vars={"group": "staff"}))
+                                 args = "import",
+                                 vars = {"group": "staff"},
+                                 ))
                 elif not r.component and r.method != "delete":
                     # Configure site_id
                     field = table.site_id
@@ -129,11 +135,11 @@ def staff():
                     if site_id:
                         field.default = site_id
                         field.writable = False
-                    field.comment = DIV(DIV(_class="tooltip",
-                                            _title="%s|%s" % (
-                                                    settings.get_org_site_label(),
-                                                    T("The facility where this position is based."),
-                                                    #messages.AUTOCOMPLETE_HELP,
+                    field.comment = DIV(DIV(_class = "tooltip",
+                                            _title = "%s|%s" % (
+                                                     settings.get_org_site_label(),
+                                                     T("The facility where this position is based."),
+                                                     #messages.AUTOCOMPLETE_HELP,
                                             )))
                     #field.comment = S3PopupLink(c="org", f="facility",
                     #                            vars = dict(child="site_id",
@@ -163,11 +169,12 @@ def staff():
                    auth.permission.has_permission("update", c="hrm", f="compose"):
                     # @ToDo: Remove this now that we have it in Events?
                     s3.actions.append(
-                        {"url": URL(f="compose",
-                                    vars = {"human_resource.id": "[id]"}),
+                        {"label": s3_str(T("Send Message")),
+                         "url": URL(f="compose",
+                                    vars = {"human_resource.id": "[id]"},
+                                    ),
                          "_class": "action-btn send",
-                         "label": str(T("Send Message"))
-                        })
+                         })
                 #s3.scripts.append("/%s/static/scripts/jquery.doubleScroll.js" % appname)
                 #s3.jquery_ready.append('''$('.dataTable_table').doubleScroll()''')
                 #s3.jquery_ready.append('''$('.dataTables_wrapper').doubleScroll()''')
@@ -214,10 +221,10 @@ def profile():
         - includes components relevant to HRM
     """
 
-    request.args = [str(s3_logged_in_person())]
+    request.args = [str(auth.s3_logged_in_person())]
 
     # Custom Method for Contacts
-    s3db.set_method("pr", resourcename,
+    s3db.set_method("pr", "profile",
                     method = "contacts",
                     action = s3db.pr_Contacts)
 
@@ -373,7 +380,7 @@ def group_membership():
 def department():
     """ Departments Controller """
 
-    if not auth.s3_has_role(ADMIN):
+    if not auth.s3_has_role("ADMIN"):
         s3.filter = auth.filter_by_root_org(s3db.hrm_department)
 
     return s3_rest_controller()
@@ -404,7 +411,7 @@ def job_title():
 
     s3.filter = FS("type").belongs((1, 3))
 
-    if not auth.s3_has_role(ADMIN):
+    if not auth.s3_has_role("ADMIN"):
         s3.filter &= auth.filter_by_root_org(s3db.hrm_job_title)
 
     return s3_rest_controller()
@@ -445,7 +452,7 @@ def course():
         return True
     s3.prep = prep
 
-    if not auth.s3_has_role(ADMIN) and not s3.filter:
+    if not auth.s3_has_role("ADMIN") and not s3.filter:
         s3.filter = auth.filter_by_root_org(s3db.hrm_course)
 
     return s3_rest_controller(rheader = s3db.hrm_rheader,
@@ -462,7 +469,7 @@ def certificate():
     """ Certificates Controller """
 
     if settings.get_hrm_filter_certificates() and \
-       not auth.s3_has_role(ADMIN):
+       not auth.s3_has_role("ADMIN"):
         s3.filter = auth.filter_by_root_org(s3db.hrm_certificate)
 
     return s3_rest_controller(rheader = s3db.hrm_rheader,
@@ -486,7 +493,7 @@ def certification():
                    )
 
     if settings.get_hrm_filter_certificates() and \
-       not auth.s3_has_role(ADMIN):
+       not auth.s3_has_role("ADMIN"):
         s3.filter = auth.filter_by_root_org(s3db.hrm_certificate)
 
     return s3_rest_controller(rheader = s3db.hrm_rheader,
@@ -769,6 +776,61 @@ def disciplinary_type():
 # -----------------------------------------------------------------------------
 def disciplinary_action():
     """ Disciplinary Action Controller """
+
+    return s3_rest_controller()
+
+# =============================================================================
+# Shifts
+# =============================================================================
+def shift():
+    """ Shifts Controller """
+
+    def prep(r):
+        if r.method == "assign":
+
+            f = s3db.org_site_shift.site_id
+            f.label = T("Site")
+            f.represent = s3db.org_site_represent
+            s3db.hrm_human_resource_shift.human_resource_id.label = T("Currently Assigned")
+
+            # Default Filters
+            from s3 import s3_set_default_filter
+            tablename = "hrm_human_resource"
+            record = r.record
+            job_title_id = record.job_title_id
+            if job_title_id:
+                s3_set_default_filter("~.job_title_id",
+                                      job_title_id,
+                                      tablename = tablename)
+            skill_id = record.skill_id
+            if skill_id:
+                s3_set_default_filter("competency.skill_id",
+                                      skill_id,
+                                      tablename = tablename)
+            # NB Availability Filter is custom,
+            # so needs the pr_availability_filter applying manually to take effect
+            s3_set_default_filter("available",
+                                  {"ge": record.start_date,
+                                   "le": record.end_date,
+                                   },
+                                  tablename = tablename)
+
+        return True
+
+    s3.prep = prep
+
+    return s3_rest_controller()
+
+def shift_template():
+    """ Shift Templates Controller """
+
+    return s3_rest_controller()
+
+# =============================================================================
+# Delegations
+# =============================================================================
+def delegation():
+    """ Delegations: RESTful CRUD controller """
 
     return s3_rest_controller()
 

@@ -2,7 +2,7 @@
 
 """ S3 Framework Tables
 
-    @copyright: 2009-2019 (c) Sahana Software Foundation
+    @copyright: 2009-2020 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -31,6 +31,7 @@ __all__ = ("S3HierarchyModel",
            "S3DashboardModel",
            "S3DynamicTablesModel",
            "s3_table_rheader",
+           "s3_scheduler_rheader",
            )
 
 import random
@@ -175,6 +176,7 @@ class S3DynamicTablesModel(S3Model):
 
     names = ("s3_table",
              "s3_table_id",
+             "s3_table_random_name",
              "s3_field",
              "s3_field_id",
              )
@@ -189,6 +191,8 @@ class S3DynamicTablesModel(S3Model):
         define_table = self.define_table
         crud_strings = s3.crud_strings
 
+        s3_table_random_name = self.s3_table_random_name
+
         # ---------------------------------------------------------------------
         # Dynamic Table
         #
@@ -200,7 +204,7 @@ class S3DynamicTablesModel(S3Model):
                      Field("name", length=128, unique=True, notnull=True,
                            # Set a random name as default, so this field
                            # can be hidden from the users (one-time default)
-                           default = "%s_%s" % (DYNAMIC_PREFIX, self.random_name()),
+                           default = "%s_%s" % (DYNAMIC_PREFIX, s3_table_random_name()),
                            label = T("Table Name"),
                            represent = self.s3_table_name_represent(),
                            requires = [IS_NOT_EMPTY(),
@@ -229,6 +233,8 @@ class S3DynamicTablesModel(S3Model):
                                                            ),
                                          ),
                            ),
+                     # Link this table to a certain master key
+                     self.auth_masterkey_id(),
                      #s3_comments(),
                      *s3_meta_fields(),
                      on_define = lambda table: \
@@ -398,12 +404,13 @@ class S3DynamicTablesModel(S3Model):
         # Pass names back to global scope (s3.*)
         #
         return {"s3_table_id": table_id,
+                "s3_table_random_name": s3_table_random_name,
                 "s3_field_id": field_id,
                 }
 
     # -------------------------------------------------------------------------
     @staticmethod
-    def random_name():
+    def s3_table_random_name():
         """
             Generate a random name
 
@@ -446,7 +453,7 @@ class S3DynamicTablesModel(S3Model):
         if not name or name == field.default:
             # The name currently being written is the default,
             # => set a new default for subsequent writes
-            field.default = "%s_%s" % (DYNAMIC_PREFIX, cls.random_name())
+            field.default = "%s_%s" % (DYNAMIC_PREFIX, cls.s3_table_random_name())
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -627,7 +634,7 @@ class S3DynamicTablesModel(S3Model):
                     ktablename = ktablename.split(".", 1)[0]
                 master = ktablename
 
-        row.update_record(master=master)
+        row.update_record(master = master)
 
 # =============================================================================
 def s3_table_rheader(r, tabs=None):
@@ -663,6 +670,44 @@ def s3_table_rheader(r, tabs=None):
                                                          record = record,
                                                          )
 
+    return rheader
+
+# =============================================================================
+def s3_scheduler_rheader(r, tabs=None):
+
+    if r.representation != "html":
+        # Resource headers only used in interactive views
+        return None
+
+    from s3 import s3_rheader_resource, S3ResourceHeader
+
+    tablename, record = s3_rheader_resource(r)
+    if tablename != r.tablename:
+        resource = current.s3db.resource(tablename, id=record.id)
+    else:
+        resource = r.resource
+
+    rheader = None
+    rheader_fields = []
+
+    if record:
+        T = current.T
+
+        if tablename == "scheduler_task":
+
+            if not tabs:
+                tabs = [(T("Job Details"), None),
+                        (T("Runs"), "run"),
+                        ]
+
+            rheader_fields = [["function_name",
+                               ],
+                              ["status",
+                               ],
+                              ]
+
+        header = S3ResourceHeader(rheader_fields, tabs, title="task_name")
+        rheader = header(r, table=resource.table, record=record)
     return rheader
 
 # END =========================================================================

@@ -2,7 +2,7 @@
 
 """ S3 Resources
 
-    @copyright: 2009-2019 (c) Sahana Software Foundation
+    @copyright: 2009-2020 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -42,11 +42,6 @@ import sys
 from itertools import chain
 
 try:
-    from cStringIO import StringIO # Faster, where available
-except ImportError:
-    from StringIO import StringIO
-
-try:
     from lxml import etree
 except ImportError:
     sys.stderr.write("ERROR: lxml module needed for XML handling\n")
@@ -58,6 +53,7 @@ from gluon.validators import IS_EMPTY_OR
 from gluon.storage import Storage
 from gluon.tools import callback
 
+from s3compat import StringIO, basestring, reduce, xrange
 from s3dal import Expression, Field, Row, Rows, Table, S3DAL, VirtualCommand
 from .s3data import S3DataTable, S3DataList
 from .s3datetime import s3_format_datetime
@@ -97,22 +93,22 @@ class S3Resource(object):
     """
 
     def __init__(self, tablename,
-                 id=None,
-                 prefix=None,
-                 uid=None,
-                 filter=None,
-                 vars=None,
-                 parent=None,
-                 linked=None,
-                 linktable=None,
-                 alias=None,
-                 components=None,
-                 filter_component=None,
-                 include_deleted=False,
-                 approved=True,
-                 unapproved=False,
-                 context=False,
-                 extra_filters=None):
+                 id = None,
+                 prefix = None,
+                 uid = None,
+                 filter = None,
+                 vars = None,
+                 parent = None,
+                 linked = None,
+                 linktable = None,
+                 alias = None,
+                 components = None,
+                 filter_component = None,
+                 include_deleted = False,
+                 approved = True,
+                 unapproved = False,
+                 context = False,
+                 extra_filters = None):
         """
             Constructor
 
@@ -322,12 +318,12 @@ class S3Resource(object):
     # Query handling
     # -------------------------------------------------------------------------
     def build_query(self,
-                    id=None,
-                    uid=None,
-                    filter=None,
-                    vars=None,
-                    extra_filters=None,
-                    filter_component=None):
+                    id = None,
+                    uid = None,
+                    filter = None,
+                    vars = None,
+                    extra_filters = None,
+                    filter_component = None):
         """
             Query builder
 
@@ -479,26 +475,26 @@ class S3Resource(object):
         if self.rfilter is None:
             self.build_query()
         if self._length is None:
-            self._length = self.rfilter.count(left=left,
-                                              distinct=distinct)
+            self._length = self.rfilter.count(left = left,
+                                              distinct = distinct)
         return self._length
 
     # -------------------------------------------------------------------------
     def select(self,
                fields,
-               start=0,
-               limit=None,
-               left=None,
-               orderby=None,
-               groupby=None,
-               distinct=False,
-               virtual=True,
-               count=False,
-               getids=False,
-               as_rows=False,
-               represent=False,
-               show_links=True,
-               raw_data=False):
+               start = 0,
+               limit = None,
+               left = None,
+               orderby = None,
+               groupby = None,
+               distinct = False,
+               virtual = True,
+               count = False,
+               getids = False,
+               as_rows = False,
+               represent = False,
+               show_links = True,
+               raw_data = False):
         """
             Extract data from this resource
 
@@ -519,19 +515,19 @@ class S3Resource(object):
 
         data = S3ResourceData(self,
                               fields,
-                              start=start,
-                              limit=limit,
-                              left=left,
-                              orderby=orderby,
-                              groupby=groupby,
-                              distinct=distinct,
-                              virtual=virtual,
-                              count=count,
-                              getids=getids,
-                              as_rows=as_rows,
-                              represent=represent,
-                              show_links=show_links,
-                              raw_data=raw_data)
+                              start = start,
+                              limit = limit,
+                              left = left,
+                              orderby = orderby,
+                              groupby = groupby,
+                              distinct = distinct,
+                              virtual = virtual,
+                              count = count,
+                              getids = getids,
+                              as_rows = as_rows,
+                              represent = represent,
+                              show_links = show_links,
+                              raw_data = raw_data)
         if as_rows:
             return data.rows
         else:
@@ -591,10 +587,10 @@ class S3Resource(object):
 
     # -------------------------------------------------------------------------
     def delete(self,
-               format=None,
-               cascade=False,
-               replaced_by=None,
-               log_errors=False,
+               format = None,
+               cascade = False,
+               replaced_by = None,
+               log_errors = False,
                ):
         """
             Delete all records in this resource
@@ -869,28 +865,28 @@ class S3Resource(object):
     def merge(self,
               original_id,
               duplicate_id,
-              replace=None,
-              update=None,
-              main=True):
+              replace = None,
+              update = None,
+              main = True):
         """ Merge two records, see also S3RecordMerger.merge """
 
         from .s3merge import S3RecordMerger
         return S3RecordMerger(self).merge(original_id,
                                           duplicate_id,
-                                          replace=replace,
-                                          update=update,
-                                          main=main)
+                                          replace = replace,
+                                          update = update,
+                                          main = main)
 
     # -------------------------------------------------------------------------
     # Exports
     # -------------------------------------------------------------------------
     def datatable(self,
-                  fields=None,
-                  start=0,
-                  limit=None,
-                  left=None,
-                  orderby=None,
-                  distinct=False,
+                  fields = None,
+                  start = 0,
+                  limit = None,
+                  left = None,
+                  orderby = None,
+                  distinct = False,
                   ):
         """
             Generate a data table of this resource
@@ -961,14 +957,14 @@ class S3Resource(object):
 
     # -------------------------------------------------------------------------
     def datalist(self,
-                 fields=None,
-                 start=0,
-                 limit=None,
-                 left=None,
-                 orderby=None,
-                 distinct=False,
-                 list_id=None,
-                 layout=None):
+                 fields = None,
+                 start = 0,
+                 limit = None,
+                 left = None,
+                 orderby = None,
+                 distinct = False,
+                 list_id = None,
+                 layout = None):
         """
             Generate a data list of this resource
 
@@ -1060,13 +1056,13 @@ class S3Resource(object):
     # Data Object API
     # -------------------------------------------------------------------------
     def load(self,
-             fields=None,
-             skip=None,
-             start=None,
-             limit=None,
-             orderby=None,
-             virtual=True,
-             cacheable=False):
+             fields = None,
+             skip = None,
+             start = None,
+             limit = None,
+             orderby = None,
+             virtual = True,
+             cacheable = False):
         """
             Loads records from the resource, applying the current filters,
             and stores them in the instance.
@@ -1235,7 +1231,7 @@ class S3Resource(object):
         if self._rows is None:
             return Rows(current.db)
         else:
-            colnames = map(str, fields)
+            colnames = [str(f) for f in fields]
             return Rows(current.db, self._rows, colnames=colnames)
 
     # -------------------------------------------------------------------------
@@ -1456,10 +1452,13 @@ class S3Resource(object):
             return 0
 
     # -------------------------------------------------------------------------
+    def __bool__(self):
+        """ Boolean test of this resource """
+
+        return self is not None
+
     def __nonzero__(self):
-        """
-            Boolean test of this resource
-        """
+        """ Python-2.7 backwards-compatibility """
 
         return self is not None
 
@@ -2188,15 +2187,15 @@ class S3Resource(object):
     # -------------------------------------------------------------------------
     def _export_record(self,
                        record,
-                       rfields=None,
-                       dfields=None,
-                       parent=None,
-                       export_map=None,
-                       lazy=None,
-                       url=None,
-                       master=True,
-                       llrepr=None,
-                       location_data=None):
+                       rfields = None,
+                       dfields = None,
+                       parent = None,
+                       export_map = None,
+                       lazy = None,
+                       url = None,
+                       master = True,
+                       llrepr = None,
+                       location_data = None):
         """
             Exports a single record to the element tree.
 
@@ -2371,20 +2370,20 @@ class S3Resource(object):
     # XML Import
     # -------------------------------------------------------------------------
     def import_xml(self, source,
-                   files=None,
-                   id=None,
-                   format="xml",
-                   stylesheet=None,
-                   extra_data=None,
-                   ignore_errors=False,
-                   job_id=None,
-                   commit_job=True,
-                   delete_job=False,
-                   strategy=None,
-                   update_policy=None,
-                   conflict_policy=None,
-                   last_sync=None,
-                   onconflict=None,
+                   files = None,
+                   id = None,
+                   format = "xml",
+                   stylesheet = None,
+                   extra_data = None,
+                   ignore_errors = False,
+                   job_id = None,
+                   commit_job = True,
+                   delete_job = False,
+                   strategy = None,
+                   update_policy = None,
+                   conflict_policy = None,
+                   last_sync = None,
+                   onconflict = None,
                    **args):
         """
             XML Importer
@@ -2423,11 +2422,11 @@ class S3Resource(object):
         if not job_id:
 
             # Additional stylesheet parameters
-            args.update(domain=xml.domain,
-                        base_url=current.response.s3.base_url,
-                        prefix=self.prefix,
-                        name=self.name,
-                        utcnow=s3_format_datetime())
+            args.update(domain = xml.domain,
+                        base_url = current.response.s3.base_url,
+                        prefix = self.prefix,
+                        name = self.name,
+                        utcnow = s3_format_datetime())
 
             # Build import tree
             if not isinstance(source, (list, tuple)):
@@ -2447,12 +2446,12 @@ class S3Resource(object):
                         t = xml.json2tree(s)
                 elif format == "csv":
                     t = xml.csv2tree(s,
-                                     resourcename=resourcename,
-                                     extra_data=extra_data)
+                                     resourcename = resourcename,
+                                     extra_data = extra_data)
                 elif format == "xls":
                     t = xml.xls2tree(s,
-                                     resourcename=resourcename,
-                                     extra_data=extra_data)
+                                     resourcename = resourcename,
+                                     extra_data = extra_data)
                 else:
                     t = xml.parse(s)
                 if not t:
@@ -2465,6 +2464,9 @@ class S3Resource(object):
                     t = xml.transform(t, stylesheet, **args)
                     if not t:
                         raise SyntaxError(xml.error)
+                    # Use this to debug the source tree if needed:
+                    #if s.name[-16:] == "organisation.csv":
+                    #sys.stderr.write(xml.tostring(t, pretty_print=True).decode("utf-8"))
 
                 if not tree:
                     tree = t.getroot()
@@ -2482,15 +2484,15 @@ class S3Resource(object):
         # Flag to let onvalidation/onaccept know this is coming from a Bulk Import
         response.s3.bulk = True
         success = self.import_tree(id, tree,
-                                   ignore_errors=ignore_errors,
-                                   job_id=job_id,
-                                   commit_job=commit_job,
-                                   delete_job=delete_job,
-                                   strategy=strategy,
-                                   update_policy=update_policy,
-                                   conflict_policy=conflict_policy,
-                                   last_sync=last_sync,
-                                   onconflict=onconflict)
+                                   ignore_errors = ignore_errors,
+                                   job_id = job_id,
+                                   commit_job = commit_job,
+                                   delete_job = delete_job,
+                                   strategy = strategy,
+                                   update_policy = update_policy,
+                                   conflict_policy = conflict_policy,
+                                   last_sync = last_sync,
+                                   onconflict = onconflict)
         response.s3.bulk = False
 
         self.files = Storage()
@@ -2545,15 +2547,15 @@ class S3Resource(object):
 
     # -------------------------------------------------------------------------
     def import_tree(self, record_id, tree,
-                    job_id=None,
-                    ignore_errors=False,
-                    delete_job=False,
-                    commit_job=True,
-                    strategy=None,
-                    update_policy=None,
-                    conflict_policy=None,
-                    last_sync=None,
-                    onconflict=None):
+                    job_id = None,
+                    ignore_errors = False,
+                    delete_job = False,
+                    commit_job = True,
+                    strategy = None,
+                    update_policy = None,
+                    conflict_policy = None,
+                    last_sync = None,
+                    onconflict = None):
         """
             Import data from an S3XML element tree.
 
@@ -2571,10 +2573,7 @@ class S3Resource(object):
         from .s3import import S3ImportJob
 
         db = current.db
-        xml = current.xml
-        auth = current.auth
         tablename = self.tablename
-        table = self.table
 
         if job_id is not None:
 
@@ -2582,13 +2581,13 @@ class S3Resource(object):
             self.error = None
             self.error_tree = None
             try:
-                import_job = S3ImportJob(table,
-                                         job_id=job_id,
-                                         strategy=strategy,
-                                         update_policy=update_policy,
-                                         conflict_policy=conflict_policy,
-                                         last_sync=last_sync,
-                                         onconflict=onconflict)
+                import_job = S3ImportJob(self.table,
+                                         job_id = job_id,
+                                         strategy = strategy,
+                                         update_policy = update_policy,
+                                         conflict_policy = conflict_policy,
+                                         last_sync = last_sync,
+                                         onconflict = onconflict)
             except:
                 self.error = current.ERROR.BAD_SOURCE
                 return False
@@ -2610,7 +2609,6 @@ class S3Resource(object):
                     self.error_tree = import_job.error_tree
             import_job.restore_references()
 
-            # this is only relevant for commit_job=True
             if commit_job:
                 if self.error and not ignore_errors:
                     return False
@@ -2630,16 +2628,19 @@ class S3Resource(object):
                          tablename=tablename)
                 # Skip import?
                 if self.skip_import:
-                    current.log.debug("Skipping import to %s" % self.tablename)
+                    current.log.debug("Skipping import to %s" % tablename)
                     self.skip_import = False
                     return True
 
         else:
             # Create a new job from an element tree
             # Do not import into tables without "id" field
+            table = self.table
             if "id" not in table.fields:
                 self.error = current.ERROR.BAD_RESOURCE
                 return False
+
+            xml = current.xml
 
             # Reset error and error tree
             self.error = None
@@ -2659,7 +2660,7 @@ class S3Resource(object):
                          tablename=tablename)
                 # Skip import?
                 if self.skip_import:
-                    current.log.debug("Skipping import to %s" % self.tablename)
+                    current.log.debug("Skipping import to %s" % tablename)
                     self.skip_import = False
                     return True
 
@@ -2700,13 +2701,13 @@ class S3Resource(object):
 
             # Import all matching elements
             import_job = S3ImportJob(table,
-                                     tree=tree,
-                                     files=self.files,
-                                     strategy=strategy,
-                                     update_policy=update_policy,
-                                     conflict_policy=conflict_policy,
-                                     last_sync=last_sync,
-                                     onconflict=onconflict)
+                                     tree = tree,
+                                     files = self.files,
+                                     strategy = strategy,
+                                     update_policy = update_policy,
+                                     conflict_policy = conflict_policy,
+                                     last_sync = last_sync,
+                                     onconflict = onconflict)
             add_item = import_job.add_item
             exposed_aliases = self.components.exposed_aliases
             for element in elements:
@@ -2720,6 +2721,7 @@ class S3Resource(object):
                 return False
 
         # Commit the import job
+        auth = current.auth
         auth.rollback = not commit_job
         success = import_job.commit(ignore_errors=ignore_errors,
                                     log_items = self.get_config("oncommit_import_item"))
@@ -2759,12 +2761,12 @@ class S3Resource(object):
     # XML introspection
     # -------------------------------------------------------------------------
     def export_options(self,
-                       component=None,
-                       fields=None,
-                       only_last=False,
-                       show_uids=False,
-                       hierarchy=False,
-                       as_json=False):
+                       component = None,
+                       fields = None,
+                       only_last = False,
+                       show_uids = False,
+                       hierarchy = False,
+                       as_json = False):
         """
             Export field options of this resource as element tree
 
@@ -2780,11 +2782,11 @@ class S3Resource(object):
         if component is not None:
             c = self.components.get(component)
             if c:
-                tree = c.export_options(fields=fields,
-                                        only_last=only_last,
-                                        show_uids=show_uids,
-                                        hierarchy=hierarchy,
-                                        as_json=as_json)
+                tree = c.export_options(fields = fields,
+                                        only_last = only_last,
+                                        show_uids = show_uids,
+                                        hierarchy = hierarchy,
+                                        as_json = as_json)
                 return tree
             else:
                 # If we get here, we've been called from the back-end,
@@ -2834,8 +2836,8 @@ class S3Resource(object):
 
                 # Get the latest record
                 # NB: this assumes that the lookupfield is auto-incremented
-                row = db().select(orderby=~lookupfield,
-                                  limitby=(0, 1),
+                row = db().select(orderby = ~lookupfield,
+                                  limitby = (0, 1),
                                   *fields).first()
 
                 # Represent the value and generate the output JSON
@@ -2865,9 +2867,9 @@ class S3Resource(object):
 
             xml = current.xml
             tree = xml.get_options(self.table,
-                                   fields=fields,
-                                   show_uids=show_uids,
-                                   hierarchy=hierarchy)
+                                   fields = fields,
+                                   show_uids = show_uids,
+                                   hierarchy = hierarchy)
 
             if as_json:
                 return xml.tree2json(tree, pretty_print=False,
@@ -2901,12 +2903,12 @@ class S3Resource(object):
 
     # -------------------------------------------------------------------------
     def export_struct(self,
-                      meta=False,
-                      options=False,
-                      references=False,
-                      stylesheet=None,
-                      as_json=False,
-                      as_tree=False):
+                      meta = False,
+                      options = False,
+                      references = False,
+                      stylesheet = None,
+                      as_json = False,
+                      as_tree = False):
         """
             Get the structure of the resource
 
@@ -3324,7 +3326,8 @@ class S3Resource(object):
         current.s3db.clear_config(self.tablename, *keys)
 
     # -------------------------------------------------------------------------
-    def limitby(self, start=0, limit=0):
+    @staticmethod
+    def limitby(start=0, limit=0):
         """
             Convert start+limit parameters into a limitby tuple
                 - limit without start => start = 0
@@ -3695,7 +3698,7 @@ class S3Resource(object):
             # Sorting direction
             def direction(i):
                 sort_dir = get_vars["sSortDir_%s" % str(i)]
-                return sort_dir and " %s" % sort_dir or ""
+                return " %s" % sort_dir if sort_dir else ""
 
             # Get the fields to order by
             try:
@@ -3793,7 +3796,7 @@ class S3Resource(object):
         else:
             orderby = None
 
-        left_joins = left_joins.as_list(tablenames=left_joins.joins.keys())
+        left_joins = left_joins.as_list(tablenames=list(left_joins.joins.keys()))
         return (searchq, orderby, left_joins)
 
     # -------------------------------------------------------------------------
@@ -3824,7 +3827,7 @@ class S3Resource(object):
             left_joins = S3Joins(self.tablename)
             left_joins.extend(rfield.left)
 
-            tablenames = left_joins.joins.keys()
+            tablenames = list(left_joins.joins.keys())
             tablenames.append(self.tablename)
             af = S3AxisFilter(qdict, tablenames)
 
@@ -3925,7 +3928,7 @@ class S3Resource(object):
                 seen(selector)
                 append(f)
 
-        if id_column is 0:
+        if id_column == 0:
             fields.insert(0, id_field)
 
         return fields
@@ -4151,19 +4154,19 @@ class S3Components(object):
         """
             Get the aliases of all exposed components ([alias])
         """
-        return self.exposed.keys()
+        return list(self.exposed.keys())
 
     def values(self):
         """
             Get all exposed components ([resource])
         """
-        return self.exposed.values()
+        return list(self.exposed.values())
 
     def items(self):
         """
             Get all exposed components ([(alias, resource)])
         """
-        return self.exposed.items()
+        return list(self.exposed.items())
 
     # -------------------------------------------------------------------------
     def __load(self, aliases, force=False):
@@ -4197,7 +4200,7 @@ class S3Components(object):
 
         hooks = s3db.get_components(master.table, names=new)
         if not hooks:
-            return
+            return {}
 
         for alias, hook in hooks.items():
 
@@ -4251,48 +4254,53 @@ class S3Components(object):
                 component.filter = None
 
             else:
-                # Filter by multiple criteria
-                query = None
-                for k, v in filterby.items():
-                    if isinstance(v, FS):
-                        # Match a field in the master table
-                        # => identify the field
-                        try:
-                            rfield = v.resolve(master)
-                        except (AttributeError, SyntaxError):
-                            if current.response.s3.debug:
-                                raise
-                            else:
-                                current.log.error(sys.exc_info()[1])
+                if callable(filterby):
+                    # Callable to construct complex join filter
+                    # => pass the (potentially aliased) component table
+                    query = filterby(table)
+                elif isinstance(filterby, dict):
+                    # Filter by multiple criteria
+                    query = None
+                    for k, v in filterby.items():
+                        if isinstance(v, FS):
+                            # Match a field in the master table
+                            # => identify the field
+                            try:
+                                rfield = v.resolve(master)
+                            except (AttributeError, SyntaxError):
+                                if current.response.s3.debug:
+                                    raise
+                                else:
+                                    current.log.error(sys.exc_info()[1])
+                                    continue
+                            # => must be a real field in the master table
+                            field = rfield.field
+                            if not field or field.table != master.table:
+                                current.log.error("Component filter for %s<=%s: "
+                                                  "invalid lookup field '%s'" %
+                                                  (master.tablename, alias, v.name))
                                 continue
-                        # => must be a real field in the master table
-                        field = rfield.field
-                        if not field or field.table != master.table:
-                            current.log.error("Component filter for %s<=%s: "
-                                              "invalid lookup field '%s'" %
-                                              (master.tablename, alias, v.name))
-                            continue
-                        subquery = (table[k] == field)
-                    else:
-                        is_list = isinstance(v, (tuple, list))
-                        if is_list and len(v) == 1:
-                            filterfor = v[0]
-                            is_list = False
+                            subquery = (table[k] == field)
                         else:
-                            filterfor = v
-                        if not is_list:
-                            subquery = (table[k] == filterfor)
-                        elif filterfor:
-                            subquery = (table[k].belongs(set(filterfor)))
-                        else:
-                            continue
-                    if subquery:
-                        if query is None:
-                            query = subquery
-                        else:
-                            query &= subquery
-
-                component.filter = query
+                            is_list = isinstance(v, (tuple, list))
+                            if is_list and len(v) == 1:
+                                filterfor = v[0]
+                                is_list = False
+                            else:
+                                filterfor = v
+                            if not is_list:
+                                subquery = (table[k] == filterfor)
+                            elif filterfor:
+                                subquery = (table[k].belongs(set(filterfor)))
+                            else:
+                                continue
+                        if subquery:
+                            if query is None:
+                                query = subquery
+                            else:
+                                query &= subquery
+                if query:
+                    component.filter = query
 
             # Copy component properties to the link resource
             link = component.link
@@ -4348,7 +4356,7 @@ class S3Components(object):
                 component = loaded.pop(alias, None)
                 if component:
                     link = component.link
-                    for k, v in links.items():
+                    for k, v in list(links.items()):
                         if v is link:
                             links.pop(k)
                     exposed.pop(alias, None)
@@ -4543,12 +4551,12 @@ class S3ResourceFilter(object):
 
     def __init__(self,
                  resource,
-                 id=None,
-                 uid=None,
-                 filter=None,
-                 vars=None,
-                 extra_filters=None,
-                 filter_component=None):
+                 id = None,
+                 uid = None,
+                 filter = None,
+                 vars = None,
+                 extra_filters = None,
+                 filter_component = None):
         """
             Constructor
 
@@ -4690,7 +4698,8 @@ class S3ResourceFilter(object):
             for alias in aliases:
                 for filter_set in (pf.cqueries, pf.cfilters):
                     if alias in filter_set:
-                        [add_filter(q) for q in filter_set[alias]]
+                        for q in filter_set[alias]:
+                            add_filter(q)
 
         # Additional filters
         if filter is not None:
@@ -4951,8 +4960,10 @@ class S3ResourceFilter(object):
                 if i >= first:
                     append(row)
                 i += 1
-        return Rows(rows.db, result,
-                    colnames=rows.colnames, compact=False)
+        return Rows(rows.db,
+                    result,
+                    colnames = rows.colnames,
+                    compact = False)
 
     # -------------------------------------------------------------------------
     def apply_extra_filters(self, ids, start=None, limit=None):
@@ -5487,7 +5498,7 @@ class S3ResourceData(object):
         ids = page = totalrows = None
         if fq:
             # Execute the filter query
-            if bigtable:
+            if bigtable and not vfilter:
                 limitby = resource.limitby(start=start, limit=limit)
             else:
                 limitby = None
@@ -5596,7 +5607,7 @@ class S3ResourceData(object):
             # Execute master query
             db = current.db
 
-            master_fields = qfields.keys()
+            master_fields = list(qfields.keys())
             if not groupby and not pagination and \
                has_id and ids and len(master_fields) == 1:
                 # We already have the ids, and master query doesn't select
@@ -5645,7 +5656,7 @@ class S3ResourceData(object):
                                                limitby = limitby,
                                                orderby_on_limitby = orderby_on_limitby,
                                                cacheable = not as_rows,
-                                               *qfields.values())
+                                               *list(qfields.values()))
 
                 # Restore virtual fields
                 if not virtual:
@@ -5804,7 +5815,7 @@ class S3ResourceData(object):
                         else:
                             result = results[record_id]
 
-                        data = frecords[record_id].keys()
+                        data = list(frecords[record_id].keys())
                         if len(data) == 1 and not list_type:
                             data = data[0]
                         result[colname] = data
@@ -6264,7 +6275,7 @@ class S3ResourceData(object):
         del fields["_left"]
 
         # Get all fields for subtable query
-        extract = fields.keys()
+        extract = list(fields.keys())
         for efield in efields:
             fields[efield.colname] = efield.field
         sfields = [f for f in fields.values() if f]
@@ -6418,7 +6429,7 @@ class S3ResourceData(object):
         # Render all unique values
         if hasattr(renderer, "bulk") and not list_type:
             per_row_lookup = False
-            fvalues = renderer.bulk(fvalues.keys(), list_type=False)
+            fvalues = renderer.bulk(list(fvalues.keys()), list_type=False)
         elif not per_row_lookup:
             for value in fvalues:
                 try:
@@ -6440,7 +6451,7 @@ class S3ResourceData(object):
 
             # List type with per-row lookup?
             if per_row_lookup:
-                value = record.keys()
+                value = list(record.keys())
                 if None in value and len(value) > 1:
                     value = [v for v in value if v is not None]
                 try:
@@ -6454,7 +6465,7 @@ class S3ResourceData(object):
             # Single value (master record)
             elif len(record) == 1 or \
                 not joined and not list_type:
-                value = record.keys()[0]
+                value = list(record.keys())[0]
                 result[colname] = fvalues[value] \
                                   if value in fvalues else none
                 if raw_data:
@@ -6465,7 +6476,7 @@ class S3ResourceData(object):
             else:
                 if hasattr(renderer, "render_list"):
                     # Prefer S3Represent's render_list (so it can be customized)
-                    data = renderer.render_list(record.keys(),
+                    data = renderer.render_list(list(record.keys()),
                                                 fvalues,
                                                 show_link = show_links,
                                                 )
@@ -6491,7 +6502,7 @@ class S3ResourceData(object):
 
                 result[colname] = data
                 if raw_data:
-                    result["_row"][colname] = record.keys()
+                    result["_row"][colname] = list(record.keys())
 
         # Restore linkto
         if show_link is not None:
@@ -6516,7 +6527,8 @@ class S3ResourceData(object):
             raise AttributeError
 
     # -------------------------------------------------------------------------
-    def getids(self, rows, pkey):
+    @staticmethod
+    def getids(rows, pkey):
         """
             Extract all unique record IDs from rows, preserving the
             order by first match
@@ -6540,7 +6552,8 @@ class S3ResourceData(object):
         return result
 
     # -------------------------------------------------------------------------
-    def getrows(self, rows, ids, pkey):
+    @staticmethod
+    def getrows(rows, ids, pkey):
         """
             Select a subset of rows by their record IDs
 
@@ -6559,7 +6572,8 @@ class S3ResourceData(object):
         return rows.find(subset)
 
     # -------------------------------------------------------------------------
-    def subset(self, rows, ids, start=None, limit=None, has_id=True):
+    @staticmethod
+    def subset(rows, ids, start=None, limit=None, has_id=True):
         """
             Build a subset [start:limit] from rows and ids
 
@@ -6609,7 +6623,7 @@ class S3ResourceData(object):
         else:
             # => we don't know any further left joins,
             #    but as a minimum we need to add this table
-            tablenames = set([rfield.tname])
+            tablenames = {rfield.tname}
 
         return tablenames
 

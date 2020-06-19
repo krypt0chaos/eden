@@ -2,7 +2,7 @@
 
 """ Sahana Eden Person Registry Model
 
-    @copyright: 2009-2019 (c) Sahana Software Foundation
+    @copyright: 2009-2020 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -41,14 +41,22 @@ __all__ = (# PR Base Entities
 
            # Person Components
            "PRAvailabilityModel",
+           "PRUnavailabilityModel",
            "PRDescriptionModel",
            "PREducationModel",
            "PRIdentityModel",
+           "PRLanguageModel",
            "PROccupationModel",
            "PRPersonDetailsModel",
+           "PRPersonLocationModel",
            "PRPersonTagModel",
 
            "PRReligionModel",
+
+           # Group Components
+           "PRGroupCompetencyModel",
+           "PRGroupLocationModel",
+           "PRGroupTagModel",
 
            # S3 Models
            "S3ImageLibraryModel",
@@ -103,6 +111,7 @@ __all__ = (# PR Base Entities
            "pr_image_modify",
 
            # Other functions
+           "pr_availability_filter",
            "pr_import_prep",
 
            # Data List Default Layouts
@@ -114,8 +123,6 @@ __all__ = (# PR Base Entities
 import json
 import os
 
-from urllib import urlencode
-
 from gluon import current, redirect, URL, \
                   A, DIV, H2, H3, H5, IMG, LABEL, P, SPAN, TABLE, TAG, TH, TR, \
                   IS_LENGTH, IS_EMPTY_OR, IS_IN_SET, IS_NOT_EMPTY, IS_EMAIL, \
@@ -124,6 +131,7 @@ from gluon.storage import Storage
 from gluon.sqlhtml import RadioWidget
 
 from ..s3 import *
+from s3compat import INTEGER_TYPES, basestring, long, urlencode
 from s3dal import Field, Row
 from s3layouts import S3PopupLink
 
@@ -273,6 +281,7 @@ class PRPersonEntityModel(S3Model):
                                       },
                                      ),
                        pr_contact_emergency = pe_id,
+                       pr_contact_person = pe_id,
                        pr_image = ({"name": "image",
                                     "joinby": "pe_id",
                                     },
@@ -353,6 +362,7 @@ class PRPersonEntityModel(S3Model):
                                 ),
                       # Role type
                       Field("role_type", "integer",
+                            default = 1,
                             requires = IS_IN_SET(role_types, zero=None),
                             represent = lambda opt: \
                                 role_types.get(opt, UNKNOWN_OPT),
@@ -1063,7 +1073,18 @@ class PRPersonModel(S3Model):
                                        "actuate": "replace",
                                        },
                        # Skills
+                       pr_language = "person_id",
                        hrm_certification = "person_id",
+                       hrm_certificate = {"link": "hrm_certification",
+                                          "joinby": "person_id",
+                                          "key": "certificate_id",
+                                          "actuate": "hide",
+                                          },
+                       hrm_skill = {"link": "hrm_competency",
+                                    "joinby": "person_id",
+                                    "key": "skill_id",
+                                    "actuate": "hide",
+                                    },
                        hrm_competency = "person_id",
                        hrm_credential = "person_id",
                        hrm_training = "person_id",
@@ -1081,6 +1102,13 @@ class PRPersonModel(S3Model):
                        # Appraisals
                        hrm_appraisal = "person_id",
                        # Availability
+                       pr_unavailability = "person_id",
+                       #pr_person_slot = "person_id",
+                       pr_slot = {"link": "pr_person_slot",
+                                  "joinby": "person_id",
+                                  "key": "slot_id",
+                                  "actuate": "hide",
+                                  },
                        pr_person_availability = {"name": "availability",
                                                  "joinby": "person_id",
                                                  # Will need tochange in future
@@ -1097,6 +1125,8 @@ class PRPersonModel(S3Model):
                        hrm_disciplinary_action = "person_id",
                        # Salary Information
                        hrm_salary = "person_id",
+                       # Delegations
+                       hrm_delegation = "person_id",
                        # Organisation Memberships
                        member_membership = "person_id",
                        # Organisation Group Association
@@ -1104,15 +1134,16 @@ class PRPersonModel(S3Model):
                        # Education history
                        pr_education = "person_id",
                        # Occupation Types
-                       pr_occupation_type = {
-                           "link": "pr_occupation_type_person",
-                           "joinby": "person_id",
-                           "key": "occupation_type_id",
-                           "actuate": "link",
-                           "autodelete": False,
-                           },
+                       pr_occupation_type = {"link": "pr_occupation_type_person",
+                                             "joinby": "person_id",
+                                             "key": "occupation_type_id",
+                                             "actuate": "link",
+                                             "autodelete": False,
+                                             },
+
                        # Group Memberships
                        pr_group_membership = "person_id",
+
                        # Identity Documents
                        pr_identity = (# All Identity Documents
                                       {"name": "identity",
@@ -1137,10 +1168,27 @@ class PRPersonModel(S3Model):
                        pr_person_details = {"joinby": "person_id",
                                             "multiple": False,
                                             },
+                       # Locations
+                       gis_location = {"link": "pr_person_location",
+                                       "joinby": "person_id",
+                                       "key": "location_id",
+                                       "actuate": "hide",
+                                       },
+                       pr_person_location = "person_id",
+
                        # Tags
                        pr_person_tag = "person_id",
+
                        # Seized Items (owner)
                        security_seized_item = "person_id",
+
+                       # Supply Items (Donor)
+                       supply_item = {"link": "supply_person_item",
+                                      "joinby": "person_id",
+                                      "key": "item_id",
+                                      "actuate": "hide",
+                                      },
+                       supply_person_item = "person_id",
                        )
 
         # Beneficiary/Case Management
@@ -1287,14 +1335,14 @@ class PRPersonModel(S3Model):
         db = current.db
         s3db = current.s3db
 
-        form_vars = form.vars
-        person_id = form_vars.id
+        form_vars_get = form.vars.get
+        person_id = form_vars_get("id")
 
         ptable = s3db.pr_person
         ltable = s3db.pr_person_user
         utable = current.auth.settings.table_user
 
-        # Find a user for this person
+        # Check if this person has a User account
         query = (ptable.id == person_id) & \
                 (ltable.pe_id == ptable.pe_id) & \
                 (utable.id == ltable.user_id)
@@ -1303,27 +1351,30 @@ class PRPersonModel(S3Model):
                                 utable.last_name,
                                 limitby=(0, 1)).first()
 
-        # If there is a user and their first or other name have changed
         if user:
+            # Update in case Names have changed
+            first_name = form_vars_get("first_name")
+            middle_name = form_vars_get("middle_name")
+            last_name = form_vars_get("last_name")
             middle_as_last = current.deployment_settings.get_L10n_mandatory_middlename()
             if middle_as_last:
                 # RMSAmericas: Map the Person's middle_name to the User's last_name
-                if form_vars.first_name and \
-                   (user.first_name != form_vars.first_name or \
-                   user.last_name != form_vars.middle_name):
+                if first_name and \
+                   (user.first_name != first_name or \
+                   user.last_name != middle_name):
                     # Update the user record
                     query = (utable.id == user.id)
-                    db(query).update(first_name = form_vars.first_name,
-                                     last_name = form_vars.middle_name,
+                    db(query).update(first_name = first_name,
+                                     last_name = middle_name,
                                      )
             else:
-                if form_vars.first_name and \
-                   (user.first_name != form_vars.first_name or \
-                   user.last_name != form_vars.last_name):
+                if first_name and \
+                   (user.first_name != first_name or \
+                   user.last_name != last_name):
                     # Update the user record
                     query = (utable.id == user.id)
-                    db(query).update(first_name = form_vars.first_name,
-                                     last_name = form_vars.last_name,
+                    db(query).update(first_name = first_name,
+                                     last_name = last_name,
                                      )
 
     # -------------------------------------------------------------------------
@@ -1332,7 +1383,6 @@ class PRPersonModel(S3Model):
         """ Import item deduplication """
 
         db = current.db
-        settings = current.deployment_settings
 
         data = item.data
 
@@ -1350,6 +1400,7 @@ class PRPersonModel(S3Model):
 
             return
 
+        settings = current.deployment_settings
         middle_mandatory = settings.get_L10n_mandatory_middlename()
 
         ptable = db.pr_person
@@ -2509,7 +2560,28 @@ class PRGroupModel(S3Model):
 
         # Components
         self.add_components(tablename,
+                            pr_person = {"link": "pr_group_membership",
+                                         "joinby": "group_id",
+                                         "key": "person_id",
+                                         # This allows native=True to break members out if tab is 'person'
+                                         # - used by CCC
+                                         "actuate": "replace",
+                                         },
                             pr_group_membership = "group_id",
+
+                            # Tags
+                            pr_group_tag = {"name": "tag",
+                                            "joinby": "group_id",
+                                            },
+
+                            # Locations
+                            gis_location = {"link": "pr_group_location",
+                                            "joinby": "group_id",
+                                            "key": "location_id",
+                                            "actuate": "hide",
+                                            "autodelete": False,
+                                            },
+                            pr_group_location = "group_id",
 
                             # Shelter (Camp) Registry
                             cr_shelter_allocation = {"joinby": "group_id",
@@ -2557,6 +2629,15 @@ class PRGroupModel(S3Model):
                                                 "autodelete": False,
                                                 },
                             org_organisation_team = "group_id",
+
+                            # Skills
+                            hrm_skill = {"link": "pr_group_competency",
+                                        "joinby": "group_id",
+                                        "key": "skill_id",
+                                        "actuate": "hide",
+                                        "autodelete": False,
+                                        },
+                            pr_group_competency = "group_id",
 
                             # Posts
                             cms_post = {"link": "cms_post_team",
@@ -2710,9 +2791,9 @@ class PRGroupModel(S3Model):
         configure(tablename,
                   context = {"person": "person_id",
                              },
-                  deduplicate = S3Duplicate(primary=("person_id",
-                                                     "group_id",
-                                                     ),
+                  deduplicate = S3Duplicate(primary = ("person_id",
+                                                       "group_id",
+                                                       ),
                                             ),
                   filter_widgets = filter_widgets,
                   list_fields = ["id",
@@ -2731,6 +2812,7 @@ class PRGroupModel(S3Model):
         # Pass names back to global scope (s3.*)
         #
         return {"pr_group_id": group_id,
+                "pr_group_types": pr_group_types,
                 "pr_mailing_list_crud_strings": mailing_list_crud_strings,
                 }
 
@@ -2838,7 +2920,7 @@ class PRGroupModel(S3Model):
         """
 
         if hasattr(form, "vars"):
-            record_id = form.vars.id
+            record_id = form.vars.get("id")
         elif isinstance(form, Row) and "id" in form:
             record_id = form.id
         else:
@@ -3031,12 +3113,145 @@ class PRGroupModel(S3Model):
             return None
 
 # =============================================================================
+class PRGroupCompetencyModel(S3Model):
+    """
+        Group Competency Model
+        - Skills available in a Group
+    """
+
+    names = ("pr_group_competency",)
+
+    def model(self):
+
+        T = current.T
+
+        # ---------------------------------------------------------------------
+        # Groups <> Skills Link Table
+        #
+        tablename = "pr_group_competency"
+        self.define_table(tablename,
+                          self.pr_group_id(),
+                          self.hrm_skill_id(),
+                          #self.hrm_competency_id(),
+                          s3_comments(),
+                          *s3_meta_fields()
+                          )
+
+        # CRUD Strings
+        current.response.s3.crud_strings[tablename] = Storage(
+            label_create = T("Add Skill"),
+            title_display = T("Skill"),
+            title_list = T("Skills"),
+            title_update = T("Edit Skill"),
+            title_upload = T("Import Skills"),
+            label_list_button = T("List Skills"),
+            msg_record_created = T("Skill added to Group"),
+            msg_record_modified = T("Skill updated"),
+            msg_record_deleted = T("Skill removed from Group"),
+            msg_list_empty = T("No Skills found for this Group"))
+
+        self.configure(tablename,
+                       deduplicate = S3Duplicate(primary = ("group_id",
+                                                            "skill_id",
+                                                            ),
+                                                 ),
+                       )
+
+        # Pass names back to global scope (s3.*)
+        return {}
+
+# =============================================================================
+class PRGroupLocationModel(S3Model):
+    """
+        Group Location Model
+        - Locations served by a Group
+    """
+
+    names = ("pr_group_location",)
+
+    def model(self):
+
+        T = current.T
+
+        # ---------------------------------------------------------------------
+        # Groups <> Locations Link Table
+        #
+        tablename = "pr_group_location"
+        self.define_table(tablename,
+                          self.pr_group_id(),
+                          self.gis_location_id(
+                            #represent = self.gis_LocationRepresent(sep=", "),
+                            requires = IS_LOCATION(),
+                            widget = S3LocationAutocompleteWidget()
+                          ),
+                          s3_comments(),
+                          *s3_meta_fields()
+                          )
+
+        # CRUD Strings
+        current.response.s3.crud_strings[tablename] = Storage(
+            label_create = T("Add Location"),
+            title_display = T("Location"),
+            title_list = T("Locations"),
+            title_update = T("Edit Location"),
+            title_upload = T("Import Location data"),
+            label_list_button = T("List Locations"),
+            msg_record_created = T("Location added to Group"),
+            msg_record_modified = T("Location updated"),
+            msg_record_deleted = T("Location removed from Group"),
+            msg_list_empty = T("No Locations found for this Group"))
+
+        self.configure(tablename,
+                       deduplicate = S3Duplicate(primary = ("group_id",
+                                                            "location_id",
+                                                            ),
+                                                 ),
+                       )
+
+        # Pass names back to global scope (s3.*)
+        return {}
+
+# =============================================================================
+class PRGroupTagModel(S3Model):
+    """
+        Group Tags
+    """
+
+    names = ("pr_group_tag",
+             )
+
+    def model(self):
+
+        T = current.T
+
+        tablename = "pr_group_tag"
+        self.define_table(tablename,
+                          self.pr_group_id(ondelete = "CASCADE"),
+                          Field("tag",
+                                label = T("Key"),
+                                ),
+                          Field("value",
+                                label = T("Value"),
+                                ),
+                          #s3_comments(),
+                          *s3_meta_fields())
+
+        self.configure(tablename,
+                       deduplicate = S3Duplicate(primary = ("group_id", "tag"),
+                                                 ignore_case = True,
+                                                 ),
+                       )
+
+        # Pass names back to global scope (s3.*)
+        return {}
+
+# =============================================================================
 class PRForumModel(S3Model):
     """
         Forums - similar to Groups, they are collections of People, however
                  these are restricted to those with User Accounts
         - used to share Information within Realms
-        - currently used just by WACOP
+        - currently used by CCC & WACOP
     """
 
     names = ("pr_forum",
@@ -3067,6 +3282,10 @@ class PRForumModel(S3Model):
         define_table(tablename,
                      # Instances
                      self.super_link("pe_id", "pr_pentity"),
+                     self.org_organisation_id(default = None,
+                                              ondelete = "CASCADE",
+                                              requires = self.org_organisation_requires(updateable = True),
+                                              ),
                      Field("name",
                            label = T("Name"),
                            requires = IS_NOT_EMPTY(),
@@ -3095,7 +3314,7 @@ class PRForumModel(S3Model):
 
         # Resource configuration
         configure(tablename,
-                  deduplicate = S3Duplicate(ignore_deleted=True),
+                  deduplicate = S3Duplicate(ignore_deleted = True),
                   super_entity = ("pr_pentity"),
                   )
 
@@ -3137,7 +3356,7 @@ class PRForumModel(S3Model):
         # Custom Methods
         set_method("pr", "forum",
                    method = "assign",
-                   action = pr_AssignMethod(component="forum_membership"))
+                   action = pr_AssignMethod(component = "forum_membership"))
 
         set_method("pr", "forum",
                    method = "join",
@@ -3210,9 +3429,9 @@ class PRForumModel(S3Model):
 
         # Table configuration
         configure(tablename,
-                  deduplicate = S3Duplicate(primary=("person_id",
-                                                     "forum_id",
-                                                     ),
+                  deduplicate = S3Duplicate(primary = ("person_id",
+                                                       "forum_id",
+                                                       ),
                                             ),
                   )
 
@@ -3374,7 +3593,7 @@ class PRForumModel(S3Model):
                       )
             body = "To approve this request, click here: %(url)s"
             translations = {}
-            languages = list(set([a["auth_user.language"] for a in admins]))
+            languages = list({a["auth_user.language"] for a in admins})
             for l in languages:
                 translations[l] = {"s": s3_str(T(subject, language = l)) % dict(forum_name = forum_name),
                                    "b": s3_str(T(body, language = l)) % dict(url = url),
@@ -3401,6 +3620,7 @@ class PRAddressModel(S3Model):
     """ Addresses for Person Entities: Persons and Organisations """
 
     names = ("pr_address",
+             "pr_address_anonymise",
              "pr_address_type_opts"
              )
 
@@ -3459,6 +3679,7 @@ class PRAddressModel(S3Model):
             title_list = T("Addresses"),
             title_update = T("Edit Address"),
             label_list_button = T("List Addresses"),
+            label_delete_button = T("Delete Address"),
             msg_record_created = T("Address added"),
             msg_record_modified = T("Address updated"),
             msg_record_deleted = T("Address deleted"),
@@ -3499,7 +3720,58 @@ class PRAddressModel(S3Model):
         # Pass names back to global scope (s3.*)
         #
         return {"pr_address_type_opts": pr_address_type_opts,
+                "pr_address_anonymise": self.pr_address_anonymise,
                 }
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def pr_address_anonymise(record_id, field, value):
+        """
+            Helper to anonymize a pr_address location; removes street and
+            postcode details, but retains Lx ancestry for statistics
+
+            @param record_id: the pr_address record ID
+            @param field: the location_id Field
+            @param value: the location_id
+
+            @return: the location_id
+
+            Use like this in anonymise rules:
+            ("pr_address", {"key": "pe_id",
+                            "match": "pe_id",
+                            "fields": {"location_id": s3db.pr_address_anonymise,
+                                       "comments": "remove",
+                                       },
+                            }),
+        """
+
+        db = current.db
+        s3db = current.s3db
+
+        # Get the location
+        if value:
+            ltable = s3db.gis_location
+            row = db(ltable.id == value).select(ltable.id,
+                                                ltable.level,
+                                                limitby = (0, 1),
+                                                ).first()
+            if not row.level:
+                # Specific location => remove address details
+                data = {"addr_street": None,
+                        "addr_postcode": None,
+                        "gis_feature_type": 0,
+                        "lat": None,
+                        "lon": None,
+                        "wkt": None,
+                        }
+                # Doesn't work - PyDAL doesn't detect the None value:
+                #if "the_geom" in ltable.fields:
+                #    data["the_geom"] = None
+                row.update_record(**data)
+                if "the_geom" in ltable.fields:
+                    db.executesql("UPDATE gis_location SET the_geom=NULL WHERE id=%s" % row.id)
+
+        return value
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -3665,7 +3937,9 @@ class PRContactModel(S3Model):
     """
 
     names = ("pr_contact",
+             #"pr_contact_id",
              "pr_contact_emergency",
+             "pr_contact_person",
              "pr_contact_represent",
              )
 
@@ -3674,6 +3948,7 @@ class PRContactModel(S3Model):
         T = current.T
 
         configure = self.configure
+        crud_strings = current.response.s3.crud_strings
         define_table = self.define_table
         messages = current.messages
         super_link = self.super_link
@@ -3718,7 +3993,7 @@ class PRContactModel(S3Model):
                      Field("priority", "integer",
                            default = 1,
                            label = T("Priority"),
-                           requires = IS_IN_SET(range(1, 10)),
+                           requires = IS_IN_SET(list(range(1, 10))),
                            comment = DIV(_class="tooltip",
                                          _title="%s|%s" % (T("Priority"),
                                                            T("What order to be contacted in."))),
@@ -3746,7 +4021,7 @@ class PRContactModel(S3Model):
                      *s3_meta_fields())
 
         # CRUD Strings
-        current.response.s3.crud_strings[tablename] = Storage(
+        crud_strings[tablename] = Storage(
             label_create = T("Add Contact Information"),
             title_display = T("Contact Details"),
             title_list = T("Contact Information"),
@@ -3759,10 +4034,10 @@ class PRContactModel(S3Model):
             msg_list_empty = T("No contact information available"))
 
         configure(tablename,
-                  deduplicate = S3Duplicate(primary=("pe_id",
-                                                     "contact_method",
-                                                     "value",
-                                                     ),
+                  deduplicate = S3Duplicate(primary = ("pe_id",
+                                                       "contact_method",
+                                                       "value",
+                                                       ),
                                             ignore_deleted = True,
                                             ),
                   list_fields = ["id",
@@ -3778,12 +4053,22 @@ class PRContactModel(S3Model):
 
         contact_represent = pr_ContactRepresent()
 
+        #contact_id = S3ReusableField("contact_id", "reference %s" % tablename,
+        #                             label = T("Contact"),
+        #                             ondelete = "CASCADE",
+        #                             represent = contact_represent,
+        #                             requires = IS_EMPTY_OR(
+        #                                            IS_ONE_OF(current.db, "pr_contact.id",
+        #                                                      contact_represent)),
+        #                             )
+
         # ---------------------------------------------------------------------
         # Emergency Contact Information
         # - currently only ever 1 of these expected
         #
         tablename = "pr_contact_emergency"
         define_table(tablename,
+                     # Component not instance
                      super_link("pe_id", "pr_pentity"),
                      Field("name",
                            label = T("Name"),
@@ -3807,6 +4092,19 @@ class PRContactModel(S3Model):
                      s3_comments(),
                      *s3_meta_fields())
 
+        # CRUD Strings
+        crud_strings[tablename] = Storage(
+            label_create = T("Add Emergency Contact"),
+            title_display = T("Emergency Contact Details"),
+            title_list = T("Emergency Contacts"),
+            title_update = T("Edit Emergency Contact"),
+            label_list_button = T("List Emergency Contacts"),
+            label_delete_button = T("Delete Emergency Contact"),
+            msg_record_created = T("Emergency Contact Added"),
+            msg_record_modified = T("Emergency Contact Updated"),
+            msg_record_deleted = T("Emergency Contact Deleted"),
+            msg_list_empty = T("No emergency contacts registered"))
+
         configure(tablename,
                   deduplicate = S3Duplicate(primary = ("pe_id",),
                                             ignore_deleted = True,
@@ -3815,9 +4113,56 @@ class PRContactModel(S3Model):
                   )
 
         # ---------------------------------------------------------------------
+        # Contact Person Information
+        #
+        # e.g. Person Reporting, Report Input By
+        #
+        tablename = "pr_contact_person"
+        define_table(tablename,
+                     # Component not instance
+                     super_link("pe_id", "pr_pentity"),
+                     Field("name",
+                           label = T("Name"),
+                           requires = IS_NOT_EMPTY(),
+                           ),
+                     Field("type", length=8,
+                           label = T("Type"),
+                           requires = IS_EMPTY_OR(IS_LENGTH(8)),
+                           # Define in template as-required
+                           #represent = S3Represent(options = contact_person_types),
+                           #requires = IS_EMPTY_OR(IS_IN_SET(contact_person_types)),
+                           ),
+                     Field("phone",
+                           label = T("Phone"),
+                           represent = s3_phone_represent,
+                           requires = IS_EMPTY_OR(IS_PHONE_NUMBER_MULTI()),
+                           widget = S3PhoneWidget(),
+                           ),
+                     Field("email",
+                           label = T("Email"),
+                           requires = IS_EMPTY_OR(IS_EMAIL()),
+                           ),
+                     s3_comments(),
+                     *s3_meta_fields())
+
+        # CRUD Strings
+        crud_strings[tablename] = Storage(
+            label_create = T("Add Contact Person"),
+            title_display = T("Contact Person Details"),
+            title_list = T("Contact Persons"),
+            title_update = T("Edit Contact Person"),
+            label_list_button = T("List Contact Persons"),
+            label_delete_button = T("Delete Contact Person"),
+            msg_record_created = T("Contact Person Added"),
+            msg_record_modified = T("Contact Person Updated"),
+            msg_record_deleted = T("Contact Person Deleted"),
+            msg_list_empty = T("No contact persons registered"))
+
+        # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return {"pr_contact_represent": contact_represent,
+        return {#"pr_contact_id": contact_id,
+                "pr_contact_represent": contact_represent,
                 }
 
     # -------------------------------------------------------------------------
@@ -4180,11 +4525,11 @@ class PRPresenceModel(S3Model):
                           super_link("pe_id", "pr_pentity"),
                           super_link("sit_id", "sit_situation"),
                           self.pr_person_id("observer",
-                          label=T("Observer"),
-                          default = current.auth.s3_logged_in_person(),
-                          comment=pr_person_comment(title=T("Observer"),
-                                                    comment=T("Person who has actually seen the person/group."),
-                                                    child="observer")),
+                                            label=T("Observer"),
+                                            default = current.auth.s3_logged_in_person(),
+                                            comment=pr_person_comment(title=T("Observer"),
+                                                                      comment=T("Person who has actually seen the person/group."),
+                                                                      child="observer")),
                           Field("shelter_id", "integer",
                                 readable = False,
                                 writable = False),
@@ -4361,7 +4706,7 @@ class PRPresenceModel(S3Model):
         table = db.pr_presence
         popts = current.s3db.pr_presence_opts
 
-        if isinstance(form, (int, long, str)):
+        if isinstance(form, INTEGER_TYPES + (str,)):
             record_id = form
         elif hasattr(form, "vars"):
             record_id = form.vars.id
@@ -4459,6 +4804,7 @@ class PRAvailabilityModel(S3Model):
     names = ("pr_date_formula",
              "pr_time_formula",
              "pr_slot",
+             "pr_person_slot",
              "pr_person_availability",
              "pr_person_availability_slot",
              )
@@ -4466,11 +4812,12 @@ class PRAvailabilityModel(S3Model):
     def model(self):
 
         T = current.T
+        db = current.db
 
         configure = self.configure
         define_table = self.define_table
 
-        db = current.db
+        person_id = self.pr_person_id
 
         # ---------------------------------------------------------------------
         # Date Formula
@@ -4487,7 +4834,7 @@ class PRAvailabilityModel(S3Model):
                         3: T("Wednesday"),
                         4: T("Thursday"),
                         5: T("Friday"),
-                        6: T("Sunday"),
+                        6: T("Saturday"),
                         }
 
         tablename = "pr_date_formula"
@@ -4497,21 +4844,32 @@ class PRAvailabilityModel(S3Model):
                            ),
                      # "interval" is a reserved word in MySQL
                      Field("date_interval", "integer",
-                           represent = S3Represent(options=interval_opts),
-                           #requires = IS_IN_SET(interval_opts),
+                           default = 1,
+                           represent = S3Represent(options = interval_opts),
+                           requires = IS_IN_SET(interval_opts),
                            ),
                      Field("rate", "integer"), # Repeat Frequency
                      Field("days_of_week", "list:integer",
-                           represent = S3Represent(options=days_of_week),
-                           #requires = IS_IN_SET((0, 1, 2, 3, 4, 5, 6),
-                           #                     multiple = True,
-                           #                     ),
+                           represent = S3Represent(options = days_of_week),
+                           requires = IS_IN_SET((0, 1, 2, 3, 4, 5, 6),
+                                                multiple = True,
+                                                ),
                            ),
                      *s3_meta_fields())
 
         configure(tablename,
                   deduplicate = S3Duplicate(),
                   )
+
+        represent = S3Represent(lookup=tablename, translate=True)
+        date_formula_id = S3ReusableField("date_formula_id", "reference %s" % tablename,
+                                          label = T("Date Formula"),
+                                          ondelete = "CASCADE",
+                                          represent = represent,
+                                          requires = IS_EMPTY_OR(
+                                                        IS_ONE_OF(db, "pr_date_formula.id",
+                                                                  represent)),
+                                          )
 
         # ---------------------------------------------------------------------
         # Time Formula
@@ -4538,6 +4896,16 @@ class PRAvailabilityModel(S3Model):
                   deduplicate = S3Duplicate(),
                   )
 
+        represent = S3Represent(lookup=tablename, translate=True)
+        time_formula_id = S3ReusableField("time_formula_id", "reference %s" % tablename,
+                                          label = T("Time Formula"),
+                                          ondelete = "CASCADE",
+                                          represent = represent,
+                                          requires = IS_EMPTY_OR(
+                                                        IS_ONE_OF(db, "pr_time_formula.id",
+                                                                  represent)),
+                                          )
+
         # ---------------------------------------------------------------------
         # Slots
         #
@@ -4546,8 +4914,8 @@ class PRAvailabilityModel(S3Model):
                      Field("name",
                            label = T("Name"),
                            ),
-                     Field("date_formula_id", "reference pr_date_formula"),
-                     Field("time_formula_id", "reference pr_time_formula"),
+                     date_formula_id(),
+                     time_formula_id(),
                      *s3_meta_fields())
 
         configure(tablename,
@@ -4557,7 +4925,7 @@ class PRAvailabilityModel(S3Model):
         represent = S3Represent(lookup=tablename, translate=True)
         slot_id = S3ReusableField("slot_id", "reference %s" % tablename,
                                   label = T("Slot"),
-                                  ondelete = "RESTRICT",
+                                  ondelete = "CASCADE",
                                   represent = represent,
                                   requires = IS_EMPTY_OR(
                                                 IS_ONE_OF(db, "pr_slot.id",
@@ -4567,6 +4935,24 @@ class PRAvailabilityModel(S3Model):
                                   #                    label = ADD_SLOT,
                                   #                    ),
                                   )
+
+        # ---------------------------------------------------------------------
+        # Persons <> Slots
+        #
+        # Simple availability without Start Date, End Date or Location
+        # - can be used directly in a Person Form
+        #
+        tablename = "pr_person_slot"
+        define_table(tablename,
+                     person_id(empty = False,
+                               ondelete = "CASCADE",
+                               ),
+                     slot_id(),
+                     *s3_meta_fields())
+
+        configure(tablename,
+                  deduplicate = S3Duplicate(primary = ("person_id", "slot_id")),
+                  )
 
         # ---------------------------------------------------------------------
         # Person Availability
@@ -4585,9 +4971,15 @@ class PRAvailabilityModel(S3Model):
 
         tablename = "pr_person_availability"
         define_table(tablename,
-                     self.pr_person_id(empty = False,
-                                       ondelete = "CASCADE",
-                                       ),
+                     person_id(empty = False,
+                               ondelete = "CASCADE",
+                               ),
+                     Field("hours_per_week", "integer",
+                           label = T("Hours per Week"),
+                           requires = IS_EMPTY_OR(IS_INT_IN_RANGE(0, 85)),
+                           readable = False,
+                           writable = False,
+                           ),
                      #s3_date("start_date",
                      #        label = T("Start Date"),
                      #        ),
@@ -4595,7 +4987,7 @@ class PRAvailabilityModel(S3Model):
                      #        label = T("End Date"),
                      #        ),
                      #self.gis_location_id(),
-                     # Dropdown of alternate options
+                     # Simple Dropdown of alternate options
                      # - cannot be used for Rostering, but can give additional
                      #   information to the slots or just be a simpler alternative
                      Field("options", "integer",
@@ -4611,7 +5003,7 @@ class PRAvailabilityModel(S3Model):
                   # @todo: adapt deduplicator once we allow multiple
                   #        availability records per person (e.g. include
                   #        start/end dates and location_id)
-                  deduplicate = S3Duplicate(primary=("person_id",)),
+                  deduplicate = S3Duplicate(primary = ("person_id",)),
                   )
 
         self.add_components(tablename,
@@ -4634,8 +5026,66 @@ class PRAvailabilityModel(S3Model):
                      *s3_meta_fields())
 
         configure(tablename,
-                  deduplicate = S3Duplicate(primary=("availability_id", "slot_id")),
+                  deduplicate = S3Duplicate(primary = ("availability_id", "slot_id")),
                   )
+
+        # ---------------------------------------------------------------------
+        # Pass names back to global scope (s3.*)
+        #
+        return {}
+
+# =============================================================================
+class PRUnavailabilityModel(S3Model):
+    """
+        Allow people to mark times when they are unavailable
+        - this is generally easier for longer-term volunteers than marking times
+          when they are available
+        - usually defined using the Organiser method
+    """
+
+    names = ("pr_unavailability",
+             )
+
+    def model(self):
+
+        T = current.T
+
+        tablename = "pr_unavailability"
+        self.define_table(tablename,
+                          self.pr_person_id(ondelete = "CASCADE"),
+                          s3_datetime("start_date",
+                                      label = T("Start Date"),
+                                      set_min = "#pr_unavailability_end_date",
+                                      ),
+                          s3_datetime("end_date",
+                                      label = T("End Date"),
+                                      set_max = "#pr_unavailability_start_date",
+                                      ),
+                          s3_comments(),
+                          *s3_meta_fields())
+
+        self.configure(tablename,
+                       organize = {"start": "start_date",
+                                   "end": "end_date",
+                                   "title": "comments",
+                                   "description": ["start_date",
+                                                   "end_date",
+                                                   ],
+                                   },
+                       )
+
+        # CRUD Strings
+        current.response.s3.crud_strings[tablename] = Storage(
+            label_create = T("Add Period of Unavailability"),
+            title_display = T("Unavailability"),
+            title_list = T("Periods of Unavailability"),
+            title_update = T("Edit Unavailability"),
+            label_list_button = T("List Periods of Unavailability"),
+            label_delete_button = T("Delete Unavailability"),
+            msg_record_created = T("Unavailability added"),
+            msg_record_modified = T("Unavailability updated"),
+            msg_record_deleted = T("Unavailability deleted"),
+            msg_list_empty = T("No Unavailability currently registered"))
 
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
@@ -5028,7 +5478,7 @@ class PRDescriptionModel(S3Model):
         ntable = db.pr_note
         ptable = s3db.pr_person
 
-        if isinstance(form, (int, long, str)):
+        if isinstance(form, INTEGER_TYPES + (str,)):
             record_id = form
         elif hasattr(form, "vars"):
             record_id = form.vars.id
@@ -5387,6 +5837,73 @@ class PRIdentityModel(S3Model):
         return {}
 
 # =============================================================================
+class PRLanguageModel(S3Model):
+    """
+        Languages for Persons
+        - alternate model to Skills for alternate UX
+        - used by IFRC RDRP AP
+    """
+
+    names = ("pr_language",)
+
+    def model(self):
+
+        T = current.T
+
+        # ---------------------------------------------------------------------
+        # Language
+        #
+        fluency_opts = {1:  T("Beginner"),
+                        2:  T("Intermediate"),
+                        3:  T("Advanced"),
+                        4:  T("Native language"),
+                        }
+
+        tablename = "pr_language"
+        self.define_table(tablename,
+                          self.pr_person_id(label = T("Person"),
+                                            ondelete = "CASCADE",
+                                            ),
+                          s3_language(),
+                          Field("writing", "integer",
+                                #default = None,
+                                label = T("Writing"),
+                                represent = S3Represent(options=fluency_opts),
+                                requires = IS_IN_SET(fluency_opts),
+                                ),
+                          Field("speaking", "integer",
+                                #default = None,
+                                label = T("Speaking"),
+                                represent = S3Represent(options=fluency_opts),
+                                requires = IS_IN_SET(fluency_opts),
+                                ),
+                          Field("understanding", "integer",
+                                #default = None,
+                                label = T("Understanding"),
+                                represent = S3Represent(options=fluency_opts),
+                                requires = IS_IN_SET(fluency_opts),
+                                ),
+                          #s3_comments(),
+                          *s3_meta_fields())
+
+        # CRUD Strings
+        current.response.s3.crud_strings[tablename] = Storage(
+            label_create = T("Add Language"),
+            title_display = T("Language Details"),
+            title_list = T("Languages"),
+            title_update = T("Edit Language"),
+            label_list_button = T("List Languages"),
+            msg_record_created = T("Language added"),
+            msg_record_modified = T("Language updated"),
+            msg_record_deleted = T("Language deleted"),
+            msg_list_empty = T("No Languages currently registered for this person"))
+
+        # ---------------------------------------------------------------------
+        # Pass names back to global scope (s3.*)
+        #
+        return {}
+
+# =============================================================================
 class PROccupationModel(S3Model):
     """
         Model for a person's current occupations, catalog-based
@@ -5467,9 +5984,9 @@ class PROccupationModel(S3Model):
         #
         tablename = "pr_occupation_type_person"
         define_table(tablename,
-                     occupation_type_id(ondelete="RESTRICT",
+                     occupation_type_id(ondelete = "RESTRICT",
                                         ),
-                     self.pr_person_id(ondelete="CASCADE",
+                     self.pr_person_id(ondelete = "CASCADE",
                                        ),
                      *s3_meta_fields())
 
@@ -5507,6 +6024,7 @@ class PRPersonDetailsModel(S3Model):
             5: T("divorced"),
             6: T("widowed"),
             7: T("cohabiting"),
+            8: T("married (not legally recognized)"),
             9: T("other"),
         }
 
@@ -5612,6 +6130,12 @@ class PRPersonDetailsModel(S3Model):
                                 readable = False,
                                 writable = False,
                                 ),
+                          Field("alias",
+                                label = T("Alias"),
+                                represent = lambda v: v or NONE,
+                                readable = False,
+                                writable = False,
+                                ),
                           Field("father_name",
                                 label = T("Name of Father"),
                                 represent = lambda v: v or NONE,
@@ -5687,7 +6211,7 @@ class PRPersonDetailsModel(S3Model):
             msg_list_empty = T("There are no details for this person yet. Add Person's Details."))
 
         self.configure(tablename,
-                       deduplicate = S3Duplicate(primary=("person_id",),
+                       deduplicate = S3Duplicate(primary = ("person_id",),
                                                  ignore_deleted = True,
                                                  ),
                        )
@@ -5697,6 +6221,57 @@ class PRPersonDetailsModel(S3Model):
         #
         return {"pr_marital_status_opts": marital_status_opts,
                 }
+
+# =============================================================================
+class PRPersonLocationModel(S3Model):
+    """
+        Person Location Model
+        - Locations served by a Person
+    """
+
+    names = ("pr_person_location",)
+
+    def model(self):
+
+        T = current.T
+
+        # ---------------------------------------------------------------------
+        # Persons <> Locations Link Table
+        #
+        tablename = "pr_person_location"
+        self.define_table(tablename,
+                          self.pr_person_id(),
+                          self.gis_location_id(
+                            #represent = self.gis_LocationRepresent(sep=", "),
+                            requires = IS_LOCATION(),
+                            widget = S3LocationAutocompleteWidget()
+                          ),
+                          s3_comments(),
+                          *s3_meta_fields()
+                          )
+
+        # CRUD Strings
+        current.response.s3.crud_strings[tablename] = Storage(
+            label_create = T("Add Location"),
+            title_display = T("Location"),
+            title_list = T("Locations"),
+            title_update = T("Edit Location"),
+            title_upload = T("Import Location data"),
+            label_list_button = T("List Locations"),
+            msg_record_created = T("Location added to Person"),
+            msg_record_modified = T("Location updated"),
+            msg_record_deleted = T("Location removed from Person"),
+            msg_list_empty = T("No Locations found for this Person"))
+
+        self.configure(tablename,
+                       deduplicate = S3Duplicate(primary = ("person_id",
+                                                            "location_id",
+                                                            ),
+                                                 ),
+                       )
+
+        # Pass names back to global scope (s3.*)
+        return {}
 
 # =============================================================================
 class PRPersonTagModel(S3Model):
@@ -5836,9 +6411,17 @@ class PRReligionModel(S3Model):
         define_table(tablename,
                      religion_id(ondelete="RESTRICT",
                                  ),
-                     self.org_organisation_id(ondelete="CASCADE",
+                     self.org_organisation_id(empty = False,
+                                              ondelete="CASCADE",
                                               ),
                      *s3_meta_fields())
+
+        self.configure(tablename,
+                       deduplicate = S3Duplicate(primary = ("religion_id",
+                                                            "organisation_id",
+                                                            ),
+                                                 ),
+                       )
 
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
@@ -6027,7 +6610,7 @@ class S3SavedFilterModel(S3Model):
             query = query.replace("'", "\"")
             try:
                 json.loads(query)
-            except ValueError, e:
+            except ValueError as e:
                 form.errors.query = "%s: %s" % (current.T("Query invalid"), e)
             form.vars.query = query
 
@@ -6331,11 +6914,11 @@ def pr_get_entities(pe_ids=None,
 
     if represent:
         if group and as_list:
-            return Storage([(t, repr_grp[t].values()) for t in repr_grp])
+            return Storage([(t, list(repr_grp[t].values())) for t in repr_grp])
         elif group:
             return repr_grp
         elif as_list:
-            return repr_flt.values()
+            return list(repr_flt.values())
         else:
             return repr_flt
     else:
@@ -6408,12 +6991,13 @@ class pr_PersonEntityRepresent(S3Represent):
 
     def __init__(self,
                  # Bad default?
-                 show_label=True,
-                 default_label="[No ID Tag]",
-                 show_type=True,
-                 multiple=False,
-                 show_link=False,
-                 linkto=None,
+                 show_label = True,
+                 default_label = "[No ID Tag]",
+                 show_type = True,
+                 multiple = False,
+                 show_link = False,
+                 linkto = None,
+                 none = None,
                  ):
         """
             Constructor
@@ -6429,11 +7013,12 @@ class pr_PersonEntityRepresent(S3Represent):
         self.show_type = show_type
         self.training_event_represent = None
 
-        super(pr_PersonEntityRepresent, self).__init__(lookup="pr_pentity",
-                                                       key="pe_id",
-                                                       multiple=multiple,
-                                                       show_link=show_link,
-                                                       linkto=linkto,
+        super(pr_PersonEntityRepresent, self).__init__(lookup = "pr_pentity",
+                                                       key = "pe_id",
+                                                       multiple = multiple,
+                                                       show_link = show_link,
+                                                       linkto = linkto,
+                                                       none = none,
                                                        )
 
     # -------------------------------------------------------------------------
@@ -6538,7 +7123,7 @@ class pr_PersonEntityRepresent(S3Represent):
                     continue
                 qfields.insert(0, table[keyname])
 
-                query = (table[keyname].belongs(types[instance_type].keys()))
+                query = (table[keyname].belongs(set(types[instance_type].keys())))
                 rows = db(query).select(*qfields)
             self.queries += 1
 
@@ -6601,17 +7186,17 @@ class pr_PersonRepresent(S3Represent):
     """
 
     def __init__(self,
-                 lookup="pr_person",
-                 key=None,
-                 fields=None,
-                 labels=None,
-                 options=None,
-                 translate=False,
-                 linkto=None,
-                 show_link=False,
-                 multiple=False,
-                 default=None,
-                 none=None):
+                 lookup = "pr_person",
+                 key = None,
+                 fields = None,
+                 labels = None,
+                 options = None,
+                 translate = False,
+                 linkto = None,
+                 show_link = False,
+                 multiple = False,
+                 default = None,
+                 none = None):
 
         if show_link and not linkto:
             request = current.request
@@ -6661,12 +7246,12 @@ class pr_PersonRepresentContact(pr_PersonRepresent):
     """
 
     def __init__(self,
-                 labels=None,
-                 linkto=None,
-                 show_email=False,
-                 show_phone=True,
-                 access=None,
-                 show_link=True,
+                 labels = None,
+                 linkto = None,
+                 show_email = False,
+                 show_phone = True,
+                 access = None,
+                 show_link = True,
                  ):
         """
             Constructor
@@ -6749,8 +7334,6 @@ class pr_PersonRepresentContact(pr_PersonRepresent):
             query = (key == values[0])
         else:
             query = key.belongs(values)
-
-        fields = ["id"]
 
         rows = db(query).select(table.id,
                                 table.pe_id,
@@ -6995,7 +7578,8 @@ def pr_image_library_represent(image_name, format=None, size=None):
         query = query & (table.width == size[0]) & \
                         (table.height == size[1])
     image = current.db(query).select(table.new_name,
-                                     limitby=(0, 1)).first()
+                                     limitby = (0, 1)
+                                     ).first()
     if image:
         return image.new_name
     else:
@@ -7013,7 +7597,11 @@ def pr_url_represent(url):
     image = pr_image_library_represent(image, size=size)
     url_small = URL(c="default", f="download", args=image)
 
-    return DIV(A(IMG(_src=url_small, _height=60), _href=url))
+    return DIV(A(IMG(_src = url_small,
+                     _height = 60,
+                     ),
+                 _href = url,
+                 ))
 
 # =============================================================================
 def pr_person_comment(title=None, comment=None, caller=None, child=None):
@@ -7065,9 +7653,12 @@ def pr_rheader(r, tabs=None):
                 rheader = DIV(
                     A(s3_avatar_represent(record_id,
                                           "pr_person",
-                                          _class="rheader-avatar"),
-                      _href=URL(f="person", args=[record_id, "image"],
-                                vars = r.get_vars),
+                                          _class = "rheader-avatar",
+                                          ),
+                      _href = URL(f="person",
+                                  args = [record_id, "image"],
+                                  vars = r.get_vars,
+                                  ),
                       ),
                     TABLE(
                         TR(TH("%s: " % T("Name")),
@@ -7096,7 +7687,8 @@ def pr_rheader(r, tabs=None):
                 query = (table.group_id == record.id) & \
                         (table.group_head == True)
                 leader = db(query).select(table.person_id,
-                                          limitby=(0, 1)).first()
+                                          limitby = (0, 1)
+                                          ).first()
                 if leader:
                     leader = s3_fullname(leader.person_id)
                 else:
@@ -7164,15 +7756,19 @@ def pr_nationality_opts():
     T = current.T
 
     countries = current.gis.get_countries(key_type="code")
-    opts = sorted([(k, T(countries[k])) for k in countries.keys()],
+    opts = sorted(((k, T(countries[k])) for k in countries.keys()),
                   # NB applies server locale's sorting rules, not
                   #    the user's chosen language (not easily doable
                   #    in Python, would require pyICU or similar)
-                  key=lambda x: x[1],
+                  key=lambda x: s3_str(x[1]),
                   )
 
     # Stateless always last
     opts.append(("XX", T("Stateless")))
+
+    # Allow to explicitly specify an "unclear" nationality?
+    if current.deployment_settings.get_pr_nationality_explicit_unclear():
+        opts.append(("??", T("unclear")))
 
     return opts
 
@@ -7187,6 +7783,8 @@ def pr_nationality_prepresent(code):
 
     if code == "XX":
         return current.T("Stateless")
+    elif code == "??":
+        return current.T("unclear")
     else:
         country_name = current.gis.get_country(code, key_type="code")
         if country_name:
@@ -7204,13 +7802,28 @@ class pr_AssignMethod(S3Method):
         e.g. Team, Forum
     """
 
-    def __init__(self, component, next_tab=None#, types=None
+    def __init__(self,
+                 component,
+                 next_tab = None,
+                 #types = None,
+                 actions = None,
+                 filter_widgets = None,
+                 list_fields = None,
+                 postprocess = None,
+                 #rheader = None,
+                 title = None,
                  ):
         """
             @param component: the Component in which to create records
             @param next_tab: the component/method to redirect to after assigning
             @param types: a list of types to pick from: Users
                           (Staff/Vols/Members to come as-required)
+            @param actions: a custom list of Actions for the dataTable
+            @param filter_widgets: a custom list of FilterWidgets to show
+            @param list_fields: a custom list of Fields to show
+            @param postprocess: name of a settings.tasks.<function> postprocess function to act on all assigned person_ids at once
+            @param rheader: an rheader to show
+            @param title: an alternative page title
         """
 
         self.component = component
@@ -7219,6 +7832,12 @@ class pr_AssignMethod(S3Method):
         else:
             self.next_tab = component
         #self.types = types
+        self.actions = actions
+        self.filter_widgets = filter_widgets
+        self.list_fields = list_fields
+        self.postprocess = postprocess
+        #self.rheader = rheader
+        self.title = title
 
     # -------------------------------------------------------------------------
     def apply_method(self, r, **attr):
@@ -7296,7 +7915,9 @@ class pr_AssignMethod(S3Method):
                     query = ~(FS("id").belongs(selected))
                     presource = s3db.resource("pr_person",
                                               alias = self.component,
-                                              filter=query, vars=filters)
+                                              filter = query,
+                                              vars = filters
+                                              )
                     rows = presource.select(["id"], as_rows=True)
                     selected = [str(row.id) for row in rows]
 
@@ -7319,18 +7940,28 @@ class pr_AssignMethod(S3Method):
                         _id = table.insert(**link)
                         if onaccept:
                             link["id"] = _id
-                            form = Storage(vars=link)
-                            onaccept(form)
+                            form = Storage(vars = link)
+                            if not isinstance(onaccept, list):
+                                onaccept = [onaccept]
+                            for callback in onaccept:
+                                callback(form)
                         added += 1
+                if self.postprocess is not None:
+                    # Run postprocess async as it may take some time to run
+                    current.s3task.run_async("settings_task",
+                                             args = [self.postprocess],
+                                             vars = {"record": record.as_json(),
+                                                     "selected": json.dumps(selected),
+                                                     })
 
             if r.representation == "popup":
                 # Don't redirect, so we retain popup extension & so close popup
                 response.confirmation = T("%(number)s assigned") % \
-                                            dict(number=added)
+                                            {"number": added}
                 return {}
             else:
                 current.session.confirmation = T("%(number)s assigned") % \
-                                                    dict(number=added)
+                                                    {"number": added}
                 if added > 0:
                     redirect(URL(args=[r.id, self.next_tab], vars={}))
                 else:
@@ -7338,48 +7969,37 @@ class pr_AssignMethod(S3Method):
 
         elif r.http == "GET":
 
-            # @ToDo: be able to configure Filter widgets
-            #if controller == "vol":
-            #    resource_type = "volunteer"
-            #elif len(types) == 1:
-            #    resource_type = "staff"
-            #else:
-            #    # Both
-            #    resource_type = None
-            #if r.controller == "req":
-            #    module = "req"
-            #else:
-            #    module = controller
-            #filter_widgets = hrm_human_resource_filters(resource_type=resource_type,
-            #                                            module=module)
-            filter_widgets = None
+            filter_widgets = self.filter_widgets
+            #if filter_widgets is None: # provide a default
 
             # List fields
-            list_fields = ["id",
-                           "first_name",
-                           "middle_name",
-                           "last_name",
-                           ]
-            if USERS:
-                db.auth_user.organisation_id.represent = s3db.org_OrganisationRepresent()
-                list_fields.append((current.messages.ORGANISATION, "user.organisation_id"))
-            elif tablename == "event_human_resource":
-                list_fields.append((current.messages.ORGANISATION, "human_resource.organisation_id"))
-            # @ToDo: be able to configure additional fields here, like:
-            #if len(types) == 2:
-            #    list_fields.append((T("Type"), "human_resource.type"))
-            #list_fields.append("human_resource.job_title_id")
-            #if settings.get_hrm_use_certificates():
-            #    list_fields.append((T("Certificates"), "certification.certificate_id"))
-            #if settings.get_hrm_use_skills():
-            #    list_fields.append((T("Skills"), "competency.skill_id"))
-            #if settings.get_hrm_use_trainings():
-            #    list_fields.append((T("Trainings"), "training.course_id"))
+            list_fields = self.list_fields
+            if list_fields is None:
+                list_fields = ["id",
+                               "first_name",
+                               "middle_name",
+                               "last_name",
+                               ]
+                if USERS:
+                    db.auth_user.organisation_id.represent = s3db.org_OrganisationRepresent()
+                    list_fields.append((current.messages.ORGANISATION, "user.organisation_id"))
+                elif tablename == "event_human_resource":
+                    list_fields.append((current.messages.ORGANISATION, "human_resource.organisation_id"))
+                # @ToDo: be able to configure additional fields here, like:
+                #if len(types) == 2:
+                #    list_fields.append((T("Type"), "human_resource.type"))
+                #list_fields.append("human_resource.job_title_id")
+                #if settings.get_hrm_use_certificates():
+                #    list_fields.append((T("Certificates"), "certification.certificate_id"))
+                #if settings.get_hrm_use_skills():
+                #    list_fields.append((T("Skills"), "competency.skill_id"))
+                #if settings.get_hrm_use_trainings():
+                #    list_fields.append((T("Trainings"), "training.course_id"))
 
             # Data table
             resource = s3db.resource("pr_person",
-                                     alias=r.component.alias if r.component else None,
-                                     vars=get_vars)
+                                     alias = r.component.alias if r.component else None,
+                                     vars = get_vars)
             totalrows = resource.count()
             if "pageLength" in get_vars:
                 display_length = get_vars["pageLength"]
@@ -7419,19 +8039,25 @@ class pr_AssignMethod(S3Method):
             dt_id = "datatable"
 
             # Bulk actions
-            dt_bulk_actions = [(T("Assign"), "assign")]
+            label = s3.crud.get("assign_button", "Assign")
+            dt_bulk_actions = [(T(label), "assign")]
 
             if r.representation in ("html", "popup"):
                 # Page load
                 resource.configure(deletable = False)
 
-                profile_url = URL(c = controller,
-                                  f = "person",
-                                  args = ["[id]", "profile"])
-                S3CRUD.action_buttons(r,
-                                      deletable = False,
-                                      read_url = profile_url,
-                                      update_url = profile_url)
+                # Actions
+                actions = self.actions
+                if actions is None:
+                    profile_url = URL(c = controller,
+                                      f = "person",
+                                      args = ["[id]", "profile"])
+                    S3CRUD.action_buttons(r,
+                                          deletable = False,
+                                          read_url = profile_url,
+                                          update_url = profile_url)
+                    actions = s3.actions
+
                 s3.no_formats = True
 
                 # Filter form
@@ -7439,65 +8065,65 @@ class pr_AssignMethod(S3Method):
 
                     # Where to retrieve filtered data from:
                     submit_url_vars = resource.crud._remove_filters(r.get_vars)
-                    filter_submit_url = r.url(vars=submit_url_vars)
+                    filter_submit_url = r.url(vars = submit_url_vars)
 
                     # Default Filters (before selecting data!)
-                    resource.configure(filter_widgets=filter_widgets)
+                    resource.configure(filter_widgets = filter_widgets)
                     S3FilterForm.apply_filter_defaults(r, resource)
 
                     # Where to retrieve updated filter options from:
                     filter_ajax_url = URL(f="person",
-                                          args=["filter.options"],
-                                          vars={})
+                                          args = ["filter.options"],
+                                          vars = {})
 
                     get_config = resource.get_config
                     filter_clear = get_config("filter_clear", True)
                     filter_formstyle = get_config("filter_formstyle", None)
                     filter_submit = get_config("filter_submit", True)
                     filter_form = S3FilterForm(filter_widgets,
-                                               clear=filter_clear,
-                                               formstyle=filter_formstyle,
-                                               submit=filter_submit,
-                                               ajax=True,
-                                               url=filter_submit_url,
-                                               ajaxurl=filter_ajax_url,
-                                               _class="filter-form",
-                                               _id="datatable-filter-form",
+                                               clear = filter_clear,
+                                               formstyle = filter_formstyle,
+                                               submit = filter_submit,
+                                               ajax = True,
+                                               url = filter_submit_url,
+                                               ajaxurl = filter_ajax_url,
+                                               _class = "filter-form",
+                                               _id = "datatable-filter-form",
                                                )
                     fresource = current.s3db.resource(resource.tablename)
                     alias = r.component.alias if r.component else None
                     ff = filter_form.html(fresource,
                                           r.get_vars,
-                                          target="datatable",
-                                          alias=alias)
+                                          target = "datatable",
+                                          alias = alias)
                 else:
                     ff = ""
 
                 # Data table (items)
                 data = resource.select(list_fields,
-                                       start=0,
-                                       limit=limit,
-                                       orderby=orderby,
-                                       left=left,
-                                       count=True,
-                                       represent=True)
+                                       start = 0,
+                                       limit = limit,
+                                       orderby = orderby,
+                                       left = left,
+                                       count = True,
+                                       represent = True)
                 filteredrows = data["numrows"]
                 dt = S3DataTable(data["rfields"], data["rows"])
-
                 items = dt.html(totalrows,
                                 filteredrows,
                                 dt_id,
-                                dt_ajax_url=r.url(representation="aadata"),
-                                dt_bulk_actions=dt_bulk_actions,
-                                dt_pageLength=display_length,
-                                dt_pagination="true",
-                                dt_searching="false",
+                                dt_ajax_url = r.url(representation="aadata"),
+                                dt_bulk_actions = dt_bulk_actions,
+                                dt_pageLength = display_length,
+                                dt_pagination = "true",
+                                dt_row_actions = actions,
+                                dt_searching = "false",
                                 )
 
                 response.view = "list_filter.html"
 
                 return {"items": items,
-                        "title": T("Assign People"),
+                        "title": self.title or T("Assign People"),
                         "list_filter_form": ff,
                         }
 
@@ -7509,20 +8135,19 @@ class pr_AssignMethod(S3Method):
                     echo = None
 
                 data = resource.select(list_fields,
-                                       start=0,
-                                       limit=limit,
-                                       orderby=orderby,
-                                       left=left,
-                                       count=True,
-                                       represent=True)
+                                       start = 0,
+                                       limit = limit,
+                                       orderby = orderby,
+                                       left = left,
+                                       count = True,
+                                       represent = True)
                 filteredrows = data["numrows"]
                 dt = S3DataTable(data["rfields"], data["rows"])
-
                 items = dt.json(totalrows,
                                 filteredrows,
                                 dt_id,
                                 echo,
-                                dt_bulk_actions=dt_bulk_actions)
+                                dt_bulk_actions = dt_bulk_actions)
                 response.headers["Content-Type"] = "application/json"
                 return items
 
@@ -7535,13 +8160,26 @@ class pr_AssignMethod(S3Method):
 def pr_compose():
     """
         Send message to people/teams/forums
+
+        @ToDo: Better rewritten as an S3Method
     """
 
-    #s3db = current.s3db
     get_vars = current.request.get_vars
     #pe_id = None
 
+    #if "person.id" in get_vars:
+    #    # CCC uses a custom version for messaging Donors re: Donations
+    #    fieldname = "person.id"
+    #    record_id = get_vars.get(fieldname)
+    #    table = current.s3db.pr_person
+    #    title = current.T("Message Person")
+    #    query = (table.id == record_id)
+    #    # URL to redirect to after message sent
+    #    url = URL(f="person", args=record_id)
+
+    #elif "forum.id" in get_vars:
     if "forum.id" in get_vars:
+        # Used by? WACOP?
         fieldname = "forum.id"
         record_id = get_vars.get(fieldname)
         pe_id = get_vars.pe_id
@@ -7565,11 +8203,11 @@ def pr_compose():
     #    db = current.db
     #    pe = db(query).select(table.pe_id,
     #                          limitby=(0, 1)).first()
-    #    if not pe:
+    #    try:
+    #        pe_id = pe.pe_id
+    #    except:
     #        current.session.error = current.T("Record not found")
     #        redirect(URL(f="index"))
-
-    #    pe_id = pe.pe_id
 
     # Create the form
     output = current.msg.compose(recipient = pe_id,
@@ -7637,13 +8275,13 @@ class pr_Contacts(S3Method):
                        )
         contacts = self.contacts(r,
                                  pe_id,
-                                 allow_create=allow_create,
-                                 method=r.method,
+                                 allow_create = allow_create,
+                                 method = r.method,
                                  )
         if contacts:
             contents.append(contacts)
         emergency = self.emergency(pe_id,
-                                   allow_create=allow_create,
+                                   allow_create = allow_create,
                                    )
         if emergency:
             contents.append(emergency)
@@ -7653,10 +8291,12 @@ class pr_Contacts(S3Method):
         s3 = response.s3
         if s3.debug:
             s3.scripts.append(URL(c="static", f="scripts",
-                                  args=["S3", "s3.ui.contacts.js"]))
+                                  args = ["S3", "s3.ui.contacts.js"],
+                                  ))
         else:
             s3.scripts.append(URL(c="static", f="scripts",
-                                  args=["S3", "s3.ui.contacts.min.js"]))
+                                  args = ["S3", "s3.ui.contacts.min.js"],
+                                  ))
 
         # Widget options
         T = current.T
@@ -7669,7 +8309,8 @@ class pr_Contacts(S3Method):
         widget_opts = {"controller": r.controller,
                        "personID": record.id,
                        "access": access,
-                       "cancelButtonText": str(T("Cancel")),
+                       "cancelButtonText": s3_str(T("Cancel")),
+                       "placeholderText": s3_str(T("Click to edit")),
                        }
 
         # Apply widget
@@ -7682,7 +8323,9 @@ class pr_Contacts(S3Method):
 
         title = self.crud_string(r.tablename, "title_display")
 
-        return {"contents": contents, "title": title}
+        return {"contents": contents,
+                "title": title,
+                }
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -7693,17 +8336,23 @@ class pr_Contacts(S3Method):
         has_permission = current.auth.s3_has_permission
 
         if has_permission("update", table, record_id=record_id):
-            edit_btn = A(T("Edit"), _class="edit-btn action-btn fright")
+            edit_btn = A(T("Edit"),
+                         _class = "edit-btn action-btn fright",
+                         )
         else:
             edit_btn = SPAN()
         if has_permission("delete", table, record_id=record_id):
-            delete_btn = A(T("Delete"), _class="delete-btn-ajax fright")
+            delete_btn = A(T("Delete"),
+                           _class = "delete-btn-ajax fright",
+                           )
         else:
             delete_btn = SPAN()
         return DIV(delete_btn,
                    edit_btn,
-                   DIV(_class="inline-throbber", _style="display:none"),
-                   _class="pr-contact-actions medium-3 columns",
+                   DIV(_class = "inline-throbber",
+                       _style = "display:none",
+                       ),
+                   _class = "pr-contact-actions medium-3 columns",
                    )
 
     # -------------------------------------------------------------------------
@@ -8059,7 +8708,7 @@ class pr_Template(S3Method):
                 # Extract Data
                 resource = r.resource
                 mailmerge_fields = current.deployment_settings.get_doc_mailmerge_fields()
-                data = resource.select(mailmerge_fields.values(),
+                data = resource.select(list(mailmerge_fields.values()),
                                        represent = True,
                                        show_links = False,
                                        )
@@ -8072,12 +8721,22 @@ class pr_Template(S3Method):
 
                 doc_data = {}
                 for key, selector in mailmerge_fields.items():
-                    rfield = rfields.get(prefix(selector))
-                    if rfield:
-                        value = record[rfield.colname]
-                        doc_data[key] = s3_unicode(value)
+                    if selector == "current_user.name":
+                        user = current.auth.user
+                        if user:
+                            username = s3_format_fullname(fname = user.first_name,
+                                                          lname = user.last_name,
+                                                          )
+                        else:
+                            username = current.T("Unknown User")
+                        doc_data[key] = s3_unicode(username)
                     else:
-                        doc_data[key] = NONE
+                        rfield = rfields.get(prefix(selector))
+                        if rfield:
+                            value = record[rfield.colname]
+                            doc_data[key] = s3_unicode(value)
+                        else:
+                            doc_data[key] = NONE
 
                 # Merge
                 filename = "%s_%s.docx" % (template.name, person_id)
@@ -8128,7 +8787,7 @@ def pr_update_affiliations(table, record):
         if not isinstance(record, Row):
             record = current.db(htable.id == record).select(htable.deleted_fk,
                                                             htable.person_id,
-                                                            limitby=(0, 1)
+                                                            limitby = (0, 1)
                                                             ).first()
         if not record:
             return
@@ -8293,7 +8952,8 @@ def pr_human_resource_update_affiliations(person_id):
                             otable.pe_id,
                             stable.uuid,
                             stable.instance_type,
-                            left=left)
+                            left = left
+                            )
 
     # Extract all master PE's
     masters = {STAFF:[], VOLUNTEER:[]}
@@ -8462,7 +9122,7 @@ def pr_get_pe_id(entity, record_id=None):
                 if isinstance(f, Row) and "pe_id" in f:
                     return f["pe_id"]
             return None
-    elif isinstance(entity, (long, int)) or \
+    elif isinstance(entity, INTEGER_TYPES) or \
          isinstance(entity, basestring) and entity.isdigit():
         return entity
     else:
@@ -8675,9 +9335,9 @@ def pr_get_role_paths(pe_id, roles=None, role_types=None):
 
 # =============================================================================
 def pr_get_role_branches(pe_id,
-                         roles=None,
-                         role_types=None,
-                         entity_type=None):
+                         roles = None,
+                         role_types = None,
+                         entity_type = None):
     """
         Get all descendants of the immediate ancestors of the entity
         within these roles/role types
@@ -8999,15 +9659,15 @@ def pr_descendants(pe_ids, skip=None, root=True):
 
     if nodes:
         descendants = pr_descendants(nodes, skip=skip, root=False)
-        for child, nodes in descendants.iteritems():
-            for parent, children in result.iteritems():
+        for child, nodes in descendants.items():
+            for parent, children in result.items():
                 if child in children:
                     for node in nodes:
                         if node not in children:
                             children.append(node)
     if root:
-        for child, nodes in result.iteritems():
-            for parent, children in result.iteritems():
+        for child, nodes in result.items():
+            for parent, children in result.items():
                 if child in children:
                     for node in nodes:
                         if node not in children and node != parent:
@@ -9034,7 +9694,7 @@ def pr_get_descendants(pe_ids, entity_types=None, skip=None, ids=True):
         return []
     if type(pe_ids) is not set:
         pe_ids = set(pe_ids) \
-                 if isinstance(pe_ids, (list, tuple)) else set([pe_ids])
+                 if isinstance(pe_ids, (list, tuple)) else {pe_ids}
 
     db = current.db
     s3db = current.s3db
@@ -9083,7 +9743,7 @@ def pr_get_descendants(pe_ids, entity_types=None, skip=None, ids=True):
         if entity_types is not None:
             if type(entity_types) is not set:
                 if not isinstance(entity_types, (tuple, list)):
-                    entity_types = set([entity_types])
+                    entity_types = {entity_types}
                 else:
                     entity_types = set(entity_types)
             return [n[0] for n in result if n[1] in entity_types]
@@ -9275,6 +9935,57 @@ def pr_image_modify(image_file,
         return True
     else:
         return False
+
+# =============================================================================
+def pr_availability_filter(r):
+    """
+        Filter requested resource (hrm_human_resource or pr_person) for
+        availability during a selected interval
+            - uses special filter selector "available" from GET vars
+            - called from prep of the respective controller
+            - adds resource filter for r.resource
+
+        @param r: the S3Request
+    """
+
+    get_vars = r.get_vars
+
+    # Parse start/end date
+    calendar = current.calendar
+    start = get_vars.pop("available__ge", None)
+    if start:
+        start = calendar.parse_datetime(start)
+    end = get_vars.pop("available__le", None)
+    if end:
+        end = calendar.parse_datetime(end)
+
+    utable = current.s3db.pr_unavailability
+
+    # Construct query for unavailability
+    query = (utable.deleted == False)
+    if start and end:
+        query &= ((utable.start_date >= start) & (utable.start_date <= end)) | \
+                 ((utable.end_date >= start) & (utable.end_date <= end)) | \
+                 ((utable.start_date < start) & (utable.end_date > end))
+    elif start:
+        query &= (utable.end_date >= start) | (utable.start_date >= start)
+    elif end:
+        query &= (utable.start_date <= end) | (utable.end_date <= end)
+    else:
+        return
+
+    # Get person_ids of unavailability-entries
+    rows = current.db(query).select(utable.person_id,
+                                    groupby = utable.person_id,
+                                    )
+    if rows:
+        person_ids = set(row.person_id for row in rows)
+
+        # Filter r.resource for non-match
+        if r.tablename == "hrm_human_resource":
+            r.resource.add_filter(~(FS("person_id").belongs(person_ids)))
+        elif r.tablename == "pr_person":
+            r.resource.add_filter(~(FS("id").belongs(person_ids)))
 
 # =============================================================================
 def pr_import_prep(data):
@@ -9626,11 +10337,11 @@ class pr_EmergencyContactListLayout(S3DataListLayout):
 
         update_url = URL(c="pr",
                          f="contact_emergency",
-                         args=[record_id, "update.popup"],
-                         vars={"refresh": list_id,
-                               "record": record_id,
-                               "profile": self.profile,
-                               },
+                         args = [record_id, "update.popup"],
+                         vars = {"refresh": list_id,
+                                 "record": record_id,
+                                 "profile": self.profile,
+                                 },
                          )
 
         has_permission = current.auth.s3_has_permission

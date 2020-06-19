@@ -3,7 +3,6 @@
 """ Disaster Victim Identification, Controllers """
 
 module = request.controller
-resourcename = request.function
 
 if not settings.has_module(module):
     raise HTTP(404, body="Module disabled: %s" % module)
@@ -17,7 +16,7 @@ def s3_menu_postp():
         body = s3db.dvi_body
         query = (body.id == body_id)
         record = db(query).select(body.id, body.pe_label,
-                                  limitby=(0,1)).first()
+                                  limitby=(0, 1)).first()
         if record:
             label = record.pe_label
             response.menu_options[-3][-1].append(
@@ -48,10 +47,7 @@ def s3_menu_postp():
 def index():
     """ Module's Home Page """
 
-    try:
-        module_name = settings.modules[module].name_nice
-    except:
-        module_name = T("Disaster Victim Identification")
+    module_name = settings.modules[module].get("name_nice", T("Disaster Victim Identification"))
 
     btable = s3db.dvi_body
     itable = s3db.dvi_identification
@@ -85,7 +81,7 @@ def recreq():
     """ Recovery Requests List """
 
     table = s3db.dvi_recreq
-    table.person_id.default = s3_logged_in_person()
+    table.person_id.default = auth.s3_logged_in_person()
 
     def prep(r):
         if r.interactive and not r.record:

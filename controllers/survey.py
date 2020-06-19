@@ -11,26 +11,19 @@
 """
 
 module = request.controller
-resourcename = request.function
 
 if not settings.has_module(module):
     raise HTTP(404, body="Module disabled: %s" % module)
 
-try:
-    from cStringIO import StringIO    # Faster, where available
-except:
-    from StringIO import StringIO
-
-from gluon.contenttype import contenttype
-import gluon.contrib.pyrtf as pyrtf
 
 # -----------------------------------------------------------------------------
 def index():
     """ Module's Home Page """
 
-    module_name = settings.modules[module].name_nice
+    module_name = settings.modules[module].get("name_nice")
     response.title = module_name
-    return dict(module_name=module_name)
+    return {"module_name": module_name,
+            }
 
 # -----------------------------------------------------------------------------
 def create():
@@ -259,7 +252,7 @@ def series():
             return output["item"]
         if not r.component and method != "summary":
             # Replace the Action buttons
-            s3.actions = [{"label": s3base.s3_str(messages.UPDATE),
+            s3.actions = [{"label": s3_str(messages.UPDATE),
                            "_class": "action-btn edit",
                            "url": URL(c="survey",
                                       f="series",
@@ -340,11 +333,11 @@ def series_export_formatted():
             logo = None
 
     # Get the translation dictionary
-    lang_dict = dict()
+    lang_dict = {}
     lang = request.post_vars.get("translation_language", None)
     if lang:
         if lang == "Default":
-            lang_dict = dict()
+            lang_dict = {}
         else:
             try:
                 from gluon.languages import read_dict
@@ -352,7 +345,7 @@ def series_export_formatted():
                                     (appname, lang)
                 lang_dict = read_dict(lang_filename)
             except:
-                lang_dict = dict()
+                lang_dict = {}
 
     if "Export_Spreadsheet" in vars:
         (matrix, matrix_answers) = series_prepare_matrix(series_id,
@@ -382,6 +375,8 @@ def series_export_formatted():
         output = s3_rest_controller(module, "series",
                                     rheader = s3db.survey_series_rheader)
         return output
+
+    from gluon.contenttype import contenttype
 
     output.seek(0)
     response.headers["Content-Type"] = contenttype(content_type)
@@ -458,7 +453,10 @@ def series_export_word(widget_list, lang_dict, title, logo):
         @ToDo: rewrite as S3Method handler
     """
 
-    output  = StringIO()
+    import gluon.contrib.pyrtf as pyrtf
+    from s3compat import BytesIO
+
+    output  = BytesIO()
     doc     = pyrtf.Document(default_language=pyrtf.Languages.EnglishUK)
     section = pyrtf.Section()
     ss      = doc.StyleSheet
@@ -515,6 +513,7 @@ def series_export_spreadsheet(matrix, matrix_answers, logo):
         return output
 
     import math
+    from s3compat import BytesIO
 
     # -------------------------------------------------------------------------
     def wrap_text(sheet, cell, style):
@@ -600,7 +599,7 @@ def series_export_spreadsheet(matrix, matrix_answers, logo):
 
     COL_WIDTH_MULTIPLIER = 240
     book = xlwt.Workbook(encoding="utf-8")
-    output = StringIO()
+    output = BytesIO()
 
     protection = xlwt.Protection()
     protection.cell_locked = 1
@@ -1026,10 +1025,12 @@ def complete():
             Import Assessment Spreadsheet
         """
 
+        from s3compat import BytesIO
+
         if series_id is None:
             response.error = T("Series details missing")
             return
-        openFile = StringIO()
+        openFile = BytesIO()
         try:
             import xlrd
             from xlwt.Utils import cell_to_rowcol2

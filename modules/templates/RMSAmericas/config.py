@@ -8,7 +8,7 @@ from gluon.storage import Storage
 
 from s3 import S3Method
 
-from controllers import deploy_index
+from .controllers import deploy_index
 
 RED_CROSS = "Red Cross / Red Crescent"
 
@@ -31,8 +31,8 @@ def config(settings):
     # -------------------------------------------------------------------------
     # Pre-Populate
     #
-    settings.base.prepopulate += ("RMSAmericas",)
-    settings.base.prepopulate_demo += ("RMSAmericas/Demo",)
+    settings.base.prepopulate.append("RMSAmericas")
+    settings.base.prepopulate_demo.append("RMSAmericas/Demo")
 
     # -------------------------------------------------------------------------
     # Theme (folder to use for views/layout.html)
@@ -986,15 +986,15 @@ def config(settings):
             # Use hierarchy-widget
             from s3 import FS, S3HierarchyWidget
             # No need for parent in represent (it's a hierarchy view)
-            node_represent = organisation_represent(parent=False)
+            node_represent = organisation_represent(parent = False)
             # Filter by type
             # (no need to exclude branches - we wouldn't be here if we didn't use branches)
             selector = FS("organisation_organisation_type.organisation_type_id")
-            f.widget = S3HierarchyWidget(lookup="org_organisation",
-                                         filter=(selector == type_id),
-                                         represent=node_represent,
-                                         multiple=False,
-                                         leafonly=False,
+            f.widget = S3HierarchyWidget(lookup = "org_organisation",
+                                         filter = (selector == type_id),
+                                         represent = node_represent,
+                                         multiple = False,
+                                         leafonly = False,
                                          )
         else:
             # Dropdown not Autocomplete
@@ -1426,23 +1426,6 @@ def config(settings):
     settings.customise_hrm_experience_resource = customise_hrm_experience_resource
 
     # -------------------------------------------------------------------------
-    def generate_password():
-        """
-            Generate a Random Password
-        """
-
-        import random
-        import string
-        from gluon import CRYPT
-        N = 8
-        password = "".join(random.SystemRandom().choice(string.ascii_letters + string.digits) for _ in range(N))
-        crypted = CRYPT(key = current.auth.settings.hmac_key,
-                        min_length = settings.get_auth_password_min_length(),
-                        digest_alg = "sha512",
-                        )(password)[0]
-        return password, crypted
-
-    # -------------------------------------------------------------------------
     def hrm_human_resource_create_onaccept(form):
         """
             If the Staff/Volunteer is RC then create them a user account with a random password
@@ -1572,7 +1555,7 @@ def config(settings):
         auth = current.auth
 
         # Generate a password
-        password, crypted = generate_password()
+        password, crypted = auth.s3_password(8)
 
         # Create User
         user = Storage(organisation_id = organisation_id,
@@ -1697,6 +1680,7 @@ Thank you"""
                 if type_ids:
                     from s3 import IS_ONE_OF
                     ltable = db.org_organisation_organisation_type
+                    type_ids = [t.id for t in type_ids]
                     rows = db(ltable.organisation_type_id.belongs(type_ids)).select(ltable.organisation_id)
                     not_filter_opts = [row.organisation_id for row in rows]
                     f.requires = IS_ONE_OF(db, "org_organisation.id",
@@ -2167,7 +2151,7 @@ Thank you"""
         query = (ttable.id.belongs(training_ids)) & \
                 (ttable.person_id == ptable.id)
         trainings = db(query).select(ptable.pe_id)
-        person_pe_ids = set([p.pe_id for p in trainings])
+        person_pe_ids = {p.pe_id for p in trainings}
 
         if not person_pe_ids:
             # No people?
@@ -2206,9 +2190,10 @@ Thank you"""
                                                                  htable.organisation_id,
                                                                  left=left,
                                                                  )
+        auth = current.auth
         utable = db.auth_user
         create_user = utable.insert
-        approve_user = current.auth.s3_approve_user
+        approve_user = auth.s3_approve_user
         cert_table = s3db.hrm_certification
         # For each Person
         for p in persons:
@@ -2221,7 +2206,7 @@ Thank you"""
                 link_user_to = "volunteer"
 
             # Set random password
-            password, crypted = generate_password()
+            password, crypted = auth.s3_password(8)
 
             # Create a User Account
             user = Storage(first_name = person.first_name,
@@ -2835,7 +2820,7 @@ Thank you"""
         """
 
         # Get organisation name and logo
-        from layouts import OM
+        from .layouts import OM
         name, logo = OM().render()
 
         from gluon.html import DIV, H2, H4, P, TABLE, TR, TD
@@ -3207,7 +3192,7 @@ Thank you"""
                                 # Add Region to list_fields
                                 list_fields.insert(-1, "region_id")
                                 # Region is required
-                                table.region_id.requires = table.region_id.requires[0].other
+                                table.region_id.requires = table.region_id.requires.other
 
                             else:
                                 table.region_id.readable = table.region_id.writable = False
@@ -4610,7 +4595,7 @@ class PrintableShipmentForm(S3Method):
         T = current.T
 
         # Get organisation name and logo
-        from layouts import OM
+        from .layouts import OM
         name, logo = OM().render()
 
         # The title
@@ -4790,7 +4775,7 @@ class PrintableShipmentForm(S3Method):
         T = current.T
 
         # Get organisation name and logo
-        from layouts import OM
+        from .layouts import OM
         name, logo = OM().render()
 
         # The title
@@ -4958,7 +4943,7 @@ class PrintableShipmentForm(S3Method):
         T = current.T
 
         # Get organisation name and logo
-        from layouts import OM
+        from .layouts import OM
         name, logo = OM().render()
 
         # The title

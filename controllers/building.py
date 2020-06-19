@@ -279,7 +279,8 @@ building_nzseel1_search = s3base.S3Search(
 
 # Set as default search method
 s3db.configure(tablename,
-                search_method=building_nzseel1_search)
+               search_method = building_nzseel1_search,
+               )
 # -------------------------------------------------------------------------
 
 # NZSEE Level 2 (~ATC-20 Rapid Evaluation) Safety Assessment Form
@@ -548,7 +549,8 @@ building_nzseel2_search = s3base.S3Search(
 
 # Set as default search method
 s3db.configure(tablename,
-                search_method=building_nzseel2_search)
+               search_method = building_nzseel2_search,
+               )
 
 
 # -----------------------------------------------------------------------------
@@ -558,14 +560,16 @@ def index():
 
     """ Module's Home Page """
 
-    module_name = settings.modules[module].name_nice
+    module_name = settings.modules[module].get("name_nice")
     response.title = module_name
-    return dict(module_name=module_name)
+    return {"module_name": module_name,
+            }
 
-# NZSEE Level 1 (~ATC-20 Rapid Evaluation) Safety Assessment Form -------------
+# -----------------------------------------------------------------------------
 def nzseel1():
-
     """
+        NZSEE Level 1 (~ATC-20 Rapid Evaluation) Safety Assessment Form
+
         RESTful CRUD controller
         @ToDo: Action Button to create a new L2 Assessment from an L1
     """
@@ -574,12 +578,12 @@ def nzseel1():
     table = db[tablename]
 
     # Pre-populate Inspector ID
-    table.person_id.default = s3_logged_in_person()
+    table.person_id.default = auth.s3_logged_in_person()
 
     # Subheadings in forms:
     s3db.configure(tablename,
         deletable=False,
-        create_next = URL(module,resourcename, args="[id]"),
+        create_next = URL(module, resourcename, args="[id]"),
         subheadings = {"name": ".", # Description in ATC-20
                        "collapse": "%s / %s" % (T("Overall Hazards"), T("Damage")),
                        "posting": ".",
@@ -649,7 +653,7 @@ def nzseel2():
     table = db[tablename]
 
     # Pre-populate Inspector ID
-    table.person_id.default = s3_logged_in_person()
+    table.person_id.default = auth.s3_logged_in_person()
 
     # Subheadings in forms:
     s3db.configure(tablename,
@@ -865,7 +869,7 @@ def adminLevel():
         path   = row.gis_location.path #report[1]
         damage = row.building_nzseel1.estimated_damage #report[2]
 
-        if temp.has_key(parent):
+        if parent in temp:
             temp[parent][7] += 1
         else:
             temp[parent] = [0, 0, 0, 0, 0, 0, 0, 1]

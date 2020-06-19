@@ -155,7 +155,7 @@ def group_membership():
 def department():
     """ Departments Controller """
 
-    if not auth.s3_has_role(ADMIN):
+    if not auth.s3_has_role("ADMIN"):
         s3.filter = auth.filter_by_root_org(s3db.hrm_department)
 
     return s3_rest_controller("hrm", resourcename)
@@ -182,7 +182,7 @@ def job_title():
 
     s3.filter = FS("human_resource.type").belongs((2, 3))
 
-    if not auth.s3_has_role(ADMIN):
+    if not auth.s3_has_role("ADMIN"):
         s3.filter &= auth.filter_by_root_org(s3db.hrm_job_title)
 
     return s3_rest_controller("hrm", resourcename,
@@ -226,7 +226,7 @@ def skill_provision():
 def course():
     """ Courses Controller """
 
-    if not auth.s3_has_role(ADMIN):
+    if not auth.s3_has_role("ADMIN"):
         s3.filter = auth.filter_by_root_org(s3db.hrm_course)
 
     return s3_rest_controller("hrm", resourcename,
@@ -246,7 +246,7 @@ def certificate():
     """ Certificates Controller """
 
     if settings.get_hrm_filter_certificates() and \
-       not auth.s3_has_role(ADMIN):
+       not auth.s3_has_role("ADMIN"):
         s3.filter = auth.filter_by_root_org(s3db.hrm_certificate)
 
     return s3_rest_controller("hrm", resourcename,
@@ -425,7 +425,7 @@ def facility():
 def programme():
     """ Volunteer Programmes controller """
 
-    if not auth.s3_has_role(ADMIN):
+    if not auth.s3_has_role("ADMIN"):
         s3.filter = auth.filter_by_root_org(s3db.hrm_programme)
 
     def prep(r):
@@ -513,6 +513,35 @@ def task():
     """ Tasks controller """
 
     return s3db.project_task_controller()
+
+# =============================================================================
+def delegation():
+
+    def prep(r):
+
+        resource = r.resource
+        table = resource.table
+
+        get_vars = r.get_vars
+        if "viewing" in get_vars:
+            try:
+                vtablename, record_id = get_vars["viewing"].split(".")
+            except ValueError:
+                return False
+            if vtablename == "pr_person":
+                resource.add_filter(FS("person_id") == record_id)
+                field = table.person_id
+                field.default = record_id
+                field.readable = field.writable = False
+            elif vtablename == "org_organisation":
+                resource.add_filter(FS("organisation_id") == record_id)
+                field = table.organisation_id
+                field.default = record_id
+                field.readable = field.writable = False
+        return True
+    s3.prep = prep
+
+    return s3_rest_controller("hrm", "delegation")
 
 # =============================================================================
 # Messaging

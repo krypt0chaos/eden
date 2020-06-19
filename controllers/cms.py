@@ -7,7 +7,6 @@
 """
 
 module = request.controller
-resourcename = request.function
 
 if not settings.has_module(module):
     raise HTTP(404, body="Module disabled: %s" % module)
@@ -110,7 +109,7 @@ def post():
     #s3.filter = (table.series_id == None)
 
     # Custom Method to add Comments
-    s3db.set_method(module, resourcename,
+    s3db.set_method("cms", "post",
                     method = "discuss",
                     action = discuss)
 
@@ -245,7 +244,7 @@ def post():
                     for module in _modules:
                         if module in ("appadmin", "errors", "ocr"):
                             continue
-                        modules[module] = _modules[module].name_nice
+                        modules[module] = _modules[module].get("name_nice")
                     s3db.cms_post_module.field.requires = \
                         IS_IN_SET_LAZY(lambda: sort_dict_by_values(modules))
 
@@ -541,8 +540,7 @@ def newsfeed():
             elif r.method == "create":
                 pass
                 # @ToDo: deployment_setting
-                #ADMIN = session.s3.system_roles.ADMIN
-                #if (not auth.s3_has_role(ADMIN)):
+                #if not auth.s3_has_role("ADMIN"):
                 #    represent = S3Represent(lookup="cms_series",
                 #                            translate=settings.get_L10n_translate_cms_series())
                 #    field.requires = IS_ONE_OF(db,
@@ -855,6 +853,8 @@ def comments():
     table = s3db.cms_comment
 
     # Form to add a new Comment
+    from gluon.tools import Crud
+    crud = Crud()
     table.post_id.default = post_id
     table.post_id.writable = table.post_id.readable = False
     form = crud.create(table)
@@ -890,10 +890,11 @@ $('#submit_record__row input').click(function(){
 
     output = DIV(output,
                  DIV(H4(T("New Post"),
-                        _id="comment-title"),
+                        _id = "comment-title"),
                      form,
-                     _id="comment-form",
-                     _class="clear"),
+                     _id = "comment-form",
+                     _class = "clear",
+                     ),
                  SCRIPT(script))
 
     return XML(output)
@@ -923,7 +924,8 @@ def posts():
                              table.avatar,
                              table.created_by,
                              table.created_on,
-                             limitby=(0, recent))
+                             limitby = (0, recent)
+                             )
 
     output = UL(_id="comments")
     import hashlib
@@ -940,7 +942,9 @@ def posts():
                                    ptable.first_name,
                                    ptable.middle_name,
                                    ptable.last_name,
-                                   left=left, limitby=(0, 1)).first()
+                                   left = left,
+                                   limitby = (0, 1)
+                                   ).first()
             if row:
                 person = row.pr_person
                 user = row[utable._tablename]
@@ -956,16 +960,21 @@ def posts():
             avatar = ""
         row = LI(DIV(avatar,
                      DIV(DIV(header,
-                             _class="comment-header"),
+                             _class = "comment-header",
+                             ),
                          DIV(XML(post.body),
-                             _class="comment-body"),
+                             _class = "comment-body",
+                             ),
                          _class="comment-text"),
                          DIV(DIV(post.created_on,
-                                 _class="comment-date"),
+                                 _class = "comment-date",
+                                 ),
                              _class="fright"),
                          DIV(author,
-                             _class="comment-footer"),
-                     _class="comment-box"))
+                             _class = "comment-footer",
+                             ),
+                     _class = "comment-box",
+                     ))
         output.append(row)
 
     return XML(output)

@@ -4,7 +4,7 @@
 
     @requires: U{B{I{gluon}} <http://web2py.com>}
 
-    @copyright: (c) 2010-2019 Sahana Software Foundation
+    @copyright: (c) 2010-2020 Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -27,7 +27,6 @@
     WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
     OTHER DEALINGS IN THE SOFTWARE.
-
 """
 
 __all__ = ("single_phone_number_pattern",
@@ -66,12 +65,14 @@ __all__ = ("single_phone_number_pattern",
 import datetime
 import json
 import re
+from uuid import uuid4
 
 from gluon import current, IS_FLOAT_IN_RANGE, IS_INT_IN_RANGE, IS_IN_SET, \
                   IS_MATCH, IS_NOT_IN_DB
 from gluon.storage import Storage
 from gluon.validators import Validator
 
+from s3compat import BytesIO, STRING_TYPES, basestring, reduce, unichr
 from .s3datetime import S3DateTime
 from .s3utils import s3_orderby_fields, s3_str, s3_unicode
 
@@ -85,10 +86,10 @@ LON_SCHEMA = re.compile(r"^([0-9]{,3})[d:°]{,1}\s*([0-9]{,3})[m:']{,1}\s*([0-9]
 def translate(text):
     if text is None:
         return None
-    elif isinstance(text, (str, unicode)):
+    elif isinstance(text, STRING_TYPES):
         if hasattr(current, "T"):
             return str(current.T(text))
-    return str(text)
+    return s3_str(text)
 
 def options_sorter(x, y):
     return 1 if s3_unicode(x[1]).upper() > s3_unicode(y[1]).upper() else -1
@@ -453,8 +454,7 @@ class IS_FLOAT_AMOUNT(IS_FLOAT_IN_RANGE):
 
         thousands_sep = current.deployment_settings.get_L10n_thousands_separator()
         if thousands_sep and isinstance(value, basestring):
-            value = s3_unicode(value).replace(thousands_sep, "") \
-                                     .encode("utf-8")
+            value = s3_str(s3_unicode(value).replace(thousands_sep, ""))
 
         return IS_FLOAT_IN_RANGE.__call__(self, value)
 
@@ -552,22 +552,22 @@ class IS_ONE_OF_EMPTY(Validator):
     def __init__(self,
                  dbset,
                  field,
-                 label=None,
-                 filterby=None,
-                 filter_opts=None,
-                 not_filterby=None,
-                 not_filter_opts=None,
-                 realms=None,
-                 updateable=False,
-                 instance_types=None,
-                 error_message="invalid value!",
-                 orderby=None,
-                 groupby=None,
-                 left=None,
-                 multiple=False,
-                 zero="",
-                 sort=True,
-                 _and=None,
+                 label = None,
+                 filterby = None,
+                 filter_opts = None,
+                 not_filterby = None,
+                 not_filter_opts = None,
+                 realms = None,
+                 updateable = False,
+                 instance_types = None,
+                 error_message = "invalid value!",
+                 orderby = None,
+                 groupby = None,
+                 left = None,
+                 multiple = False,
+                 zero = "",
+                 sort = True,
+                 _and = None,
                  ):
         """
             Validator for foreign keys.
@@ -799,8 +799,9 @@ class IS_ONE_OF_EMPTY(Validator):
 
             if labels and self.sort:
 
-                items = zip(self.theset, self.labels)
-                items.sort(key=lambda item: s3_unicode(item[1]).lower())
+                items = sorted(zip(self.theset, self.labels),
+                               key = lambda item: s3_unicode(item[1]).lower(),
+                               )
                 self.theset, self.labels = zip(*items)
 
         else:
@@ -1053,7 +1054,7 @@ class IS_ONE_OF(IS_ONE_OF_EMPTY):
         if theset is None or labels is None:
             items = []
         else:
-            items = zip(theset, labels)
+            items = list(zip(theset, labels))
         if zero and self.zero is not None and not self.multiple:
             items.insert(0, ("", self.zero))
         return items
@@ -1101,7 +1102,7 @@ class IS_NOT_ONE_OF(IS_NOT_IN_DB):
 
         # Does the table use multiple columns as key?
         record_id = self.record_id
-        keys = record_id.keys() if isinstance(record_id, dict) else None
+        keys = list(record_id.keys()) if isinstance(record_id, dict) else None
 
         # Build duplicate query
         # => if the field has a unique-constraint, we must include
@@ -1238,16 +1239,17 @@ class IS_PROCESSED_IMAGE(Validator):
             return (value, None)
 
         r = current.request
-        post_vars = r.post_vars
 
         if r.env.request_method == "GET":
             return (value, None)
+
+        post_vars = r.post_vars
 
         # If there's a newly uploaded file, accept it. It'll be processed in
         # the update form.
         # NOTE: A FieldStorage with data evaluates as False (odd!)
         uploaded_image = post_vars.get(self.field_name)
-        if uploaded_image not in ("", None):
+        if uploaded_image not in (b"", None): # Py 3.x it's b"", which is equivalent to "" in Py 2.x
             return (uploaded_image, None)
 
         cropped_image = post_vars.get("imagecrop-data")
@@ -1260,20 +1262,14 @@ class IS_PROCESSED_IMAGE(Validator):
         # process if, that worked.
         if cropped_image:
             import base64
-            import uuid
-            try:
-                from cStringIO import StringIO
-            except ImportError:
-                from StringIO import StringIO
 
             metadata, cropped_image = cropped_image.split(",")
             #filename, datatype, enctype = metadata.split(";")
             filename = metadata.split(";", 1)[0]
 
             f = Storage()
-            f.filename = uuid.uuid4().hex + filename
-
-            f.file = StringIO(base64.decodestring(cropped_image))
+            f.filename = uuid4().hex + filename
+            f.file = BytesIO(base64.b64decode(cropped_image))
 
             return (f, None)
 
@@ -1281,15 +1277,16 @@ class IS_PROCESSED_IMAGE(Validator):
         points = post_vars.get("imagecrop-points")
         if points and uploaded_image:
             import os
-            points = map(float, points.split(","))
+            points = [float(p) for p in points.split(",")]
 
             if not self.upload_path:
                 path = os.path.join(r.folder, "uploads", "images", uploaded_image)
             else:
                 path = os.path.join(self.upload_path, uploaded_image)
 
-            current.s3task.async("crop_image",
-                args=[path] + points + [self.image_bounds[0]])
+
+            current.s3task.run_async("crop_image",
+                            args = [path] + points + [self.image_bounds[0]])
 
         return (None, None)
 
@@ -1810,15 +1807,15 @@ class IS_IN_SET_LAZY(Validator):
         is problematic if theset_fn returns a dict.
     """
 
-    def __init__(
-        self,
-        theset_fn,
-        represent=None,
-        error_message="value not allowed",
-        multiple=False,
-        zero="",
-        sort=False,
-        ):
+    def __init__(self,
+                 theset_fn,
+                 represent = None,
+                 error_message = "value not allowed",
+                 multiple = False,
+                 zero = "",
+                 sort = False,
+                 ):
+
         self.multiple = multiple
         if not callable(theset_fn):
             raise TypeError("Argument must be a callable.")
@@ -1832,15 +1829,16 @@ class IS_IN_SET_LAZY(Validator):
 
     # -------------------------------------------------------------------------
     def _make_theset(self):
+
         theset = self.theset_fn()
         if theset:
             if isinstance(theset, dict):
                 self.theset = [str(item) for item in theset]
-                self.labels = theset.values()
-            elif isinstance(theset, (tuple,list)):  # @ToDo: Can this be a Rows?
-                if isinstance(theset[0], (tuple,list)) and len(theset[0])==2:
-                    self.theset = [str(item) for item,label in theset]
-                    self.labels = [str(label) for item,label in theset]
+                self.labels = list(theset.values())
+            elif isinstance(theset, (tuple, list)):  # @ToDo: Can this be a Rows?
+                if isinstance(theset[0], (tuple, list)) and len(theset[0])==2:
+                    self.theset = [str(item) for item, label in theset]
+                    self.labels = [str(label) for item, label in theset]
                 else:
                     self.theset = [str(item) for item in theset]
                     represent = self.represent
@@ -1853,6 +1851,7 @@ class IS_IN_SET_LAZY(Validator):
 
     # -------------------------------------------------------------------------
     def options(self, zero=True):
+
         if not self.theset:
             self._make_theset()
         if not self.labels:
@@ -1867,11 +1866,12 @@ class IS_IN_SET_LAZY(Validator):
 
     # -------------------------------------------------------------------------
     def __call__(self, value):
+
         if not self.theset:
             self._make_theset()
         if self.multiple:
             ### if below was values = re.compile("[\w\-:]+").findall(str(value))
-            if isinstance(value, (str,unicode)):
+            if isinstance(value, STRING_TYPES):
                 values = [value]
             elif isinstance(value, (tuple, list)):
                 values = value
@@ -1885,37 +1885,11 @@ class IS_IN_SET_LAZY(Validator):
                 return ([], None)
             return (value, self.error_message)
         if self.multiple:
-            if isinstance(self.multiple,(tuple,list)) and \
-                    not self.multiple[0]<=len(values)<self.multiple[1]:
+            if isinstance(self.multiple, (tuple, list)) and \
+               not self.multiple[0] <= len(values) < self.multiple[1]:
                 return (values, self.error_message)
             return (values, None)
         return (value, None)
-
-# =============================================================================
-class IS_TIME_INTERVAL_WIDGET(Validator):
-    """
-        Simple validator for the S3TimeIntervalWidget, returns
-        the selected time interval in seconds
-    """
-
-    def __init__(self, field):
-        self.field = field
-
-    # -------------------------------------------------------------------------
-    def __call__(self, value):
-
-        try:
-            val = int(value)
-        except ValueError:
-            return (0, None)
-        request = current.request
-        _vars = request.post_vars
-        try:
-            mul = int(_vars[("%s_multiplier" % self.field).replace(".", "_")])
-        except ValueError:
-            return (0, None)
-        seconds = val * mul
-        return (seconds, None)
 
 # =============================================================================
 class IS_PERSON_GENDER(IS_IN_SET):
@@ -1975,13 +1949,13 @@ class IS_PHONE_NUMBER(Validator):
         else:
             error = True
 
+        error_message = self.error_message
         if not error:
             if self.international and \
                current.deployment_settings \
                       .get_msg_require_international_phone_numbers():
 
                 # Configure alternative error message
-                error_message = self.error_message
                 if not error_message:
                     error_message = current.T("Enter phone number in international format like +46783754957")
 
@@ -1996,7 +1970,6 @@ class IS_PHONE_NUMBER(Validator):
             else:
                 return (number, None)
 
-        error_message = self.error_message
         if not error_message:
             error_message = current.T("Enter a valid phone number")
 
@@ -2094,6 +2067,9 @@ class IS_DYNAMIC_FIELDTYPE(Validator):
                        "string",
                        "text",
                        "upload",
+                       "json",
+                       "list:integer",
+                       "list:string",
                        )
 
     def __init__(self,
@@ -2824,7 +2800,7 @@ class IS_ISO639_2_LANGUAGE_CODE(IS_IN_SET):
                 ("so", "Somali"),
                 #("son", "Songhai languages"),
                 #("sot", "Sotho, Southern"),
-                ("st", "Sotho, Southern"),
+                ("st", "Sotho, Southern"), # Sesotho
                 #("spa", "Spanish; Castilian"),
                 ("es", "Spanish; Castilian"),
                 #("srd", "Sardinian"),

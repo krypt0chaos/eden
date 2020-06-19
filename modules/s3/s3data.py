@@ -2,7 +2,7 @@
 
 """ S3 Data Views
 
-    @copyright: 2009-2019 (c) Sahana Software Foundation
+    @copyright: 2009-2020 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -30,6 +30,11 @@
                        S3DataList
 """
 
+__all__ = ("S3DataTable",
+           "S3DataList",
+           "S3DataListLayout",
+           )
+
 import re
 
 from itertools import islice
@@ -38,6 +43,7 @@ from gluon import current
 from gluon.html import *
 from gluon.storage import Storage
 
+from s3compat import PY2, xrange
 from s3dal import Expression, S3DAL
 from .s3utils import s3_orderby_fields, s3_str, s3_unicode, s3_set_extension
 
@@ -211,11 +217,13 @@ class S3DataTable(object):
             self.id_counter += 1
         self.id = id
 
-        bulkActions = attr.get("dt_bulk_actions", None)
-        bulkCol = attr.get("dt_bulk_col", 0)
+        attr_get = attr.get
+
+        bulkActions = attr_get("dt_bulk_actions", None)
+        bulkCol = attr_get("dt_bulk_col", 0)
         if bulkCol > len(flist):
             bulkCol = len(flist)
-        action_col = attr.get("dt_action_col", 0)
+        action_col = attr_get("dt_action_col", 0)
         if action_col != 0:
             if action_col == -1 or action_col >= len(flist):
                 action_col = len(flist) -1
@@ -230,7 +238,7 @@ class S3DataTable(object):
             if bulkCol <= action_col:
                 action_col += 1
 
-        pagination = attr.get("dt_pagination", "true") == "true"
+        pagination = attr_get("dt_pagination", "true") == "true"
         if pagination:
             real_end = self.end
             self.end = self.start + 1
@@ -298,7 +306,7 @@ class S3DataTable(object):
              displayrows,
              id,
              draw,
-             stringify=True,
+             stringify = True,
              **attr
              ):
         """
@@ -321,8 +329,9 @@ class S3DataTable(object):
                                     after the group title.
         """
 
+        attr_get = attr.get
         flist = self.colnames
-        action_col = attr.get("dt_action_col", 0)
+        action_col = attr_get("dt_action_col", 0)
         if action_col != 0:
             if action_col == -1 or action_col >= len(flist):
                 action_col = len(flist) - 1
@@ -330,8 +339,8 @@ class S3DataTable(object):
         # Get the details for any bulk actions. If we have at least one bulk
         # action then a column will be added, either at the start or in the
         # column identified by dt_bulk_col
-        bulkActions = attr.get("dt_bulk_actions", None)
-        bulkCol = attr.get("dt_bulk_col", 0)
+        bulkActions = attr_get("dt_bulk_actions", None)
+        bulkCol = attr_get("dt_bulk_col", 0)
         if bulkActions:
             if bulkCol > len(flist):
                 bulkCol = len(flist)
@@ -344,8 +353,8 @@ class S3DataTable(object):
                            id,
                            draw,
                            flist,
-                           action_col=action_col,
-                           stringify=stringify,
+                           action_col = action_col,
+                           stringify = stringify,
                            **attr)
 
     # -------------------------------------------------------------------------
@@ -378,7 +387,7 @@ class S3DataTable(object):
                                 by default it will be the column immediately
                                 before the first data item
                    dt_bulk_selected: A list of selected items
-                   dt_actions: dictionary of actions
+                   #dt_row_actions: a list of actions (each is a dict)
                    dt_styles: dictionary of styles to be applied to a list of ids
                               for example:
                               {"warning" : [1,3,6,7,9],
@@ -390,8 +399,9 @@ class S3DataTable(object):
         attr = Storage()
         if s3.datatable_ajax_source:
             attr.dt_ajax_url = s3.datatable_ajax_source
-        if s3.actions:
-            attr.dt_actions = s3.actions
+        # Defaults in htmlConfig() anyway:
+        #if s3.actions:
+        #    attr.dt_row_actions = s3.actions
         if s3.dataTableBulkActions:
             attr.dt_bulk_actions = s3.dataTableBulkActions
         if s3.dataTable_pageLength:
@@ -403,6 +413,7 @@ class S3DataTable(object):
         if s3.dataTable_group:
             attr.dt_group = s3.dataTable_group
         # Nothing using currently
+        # - and not worth enabling as not used by standard CRUD
         #if s3.dataTable_NoSearch:
         #    attr.dt_searching = not s3.dataTable_NoSearch
         if s3.dataTable_dom:
@@ -457,7 +468,8 @@ class S3DataTable(object):
 
         # Construct row of export icons
         # @note: icons appear in reverse order due to float-right
-        icons = SPAN(_class = "list_formats")
+        icons = SPAN(_class = "list_formats",
+                     )
 
         settings = current.deployment_settings
         export_formats = settings.get_ui_export_formats()
@@ -469,7 +481,7 @@ class S3DataTable(object):
 
             # Auto-detect KML fields
             if "kml" not in formats and rfields:
-                kml_fields = set(["location_id", "site_id"])
+                kml_fields = {"location_id", "site_id"}
                 if any(rfield.fname in kml_fields for rfield in rfields):
                     formats["kml"] = default_url
 
@@ -496,7 +508,7 @@ class S3DataTable(object):
                     if fmt == "map":
                         title = T("Show on Map")
                     else:
-                        title = EXPORT % dict(format=fmt.upper())
+                        title = EXPORT % {"format": fmt.upper()}
 
                 # Export format URL
                 if fmt in default_formats:
@@ -513,15 +525,17 @@ class S3DataTable(object):
                                         },
                                 ))
 
-        export_options = DIV(_class="dt-export-options")
+        export_options = DIV(_class = "dt-export-options",
+                             )
 
         # Append the permalink (if any)
         if permalink is not None:
             label = settings.get_ui_label_permalink()
             if label:
                 link = A(T(label),
-                         _href=permalink,
-                         _class="permalink")
+                         _href = permalink,
+                         _class = "permalink",
+                         )
                 export_options.append(link)
                 if len(icons):
                     export_options.append(" | ")
@@ -534,8 +548,8 @@ class S3DataTable(object):
     # -------------------------------------------------------------------------
     @staticmethod
     def defaultActionButtons(resource,
-                             custom_actions=None,
-                             r=None
+                             custom_actions = None,
+                             r = None
                              ):
         """
             Configure default action buttons
@@ -639,6 +653,7 @@ class S3DataTable(object):
                    dt_bulk_col: The column in which the checkboxes will appear,
                                 by default it will be the column immediately
                                 before the first data item
+                   dt_bulk_single: only allow a single row to be selected
                    dt_group: The column(s) that is(are) used to group the data
                    dt_group_totals: The number of record in each group.
                                     This will be displayed in parenthesis
@@ -650,7 +665,7 @@ class S3DataTable(object):
                                     the actual number of groups (giving an empty group).
                    dt_group_space: Insert a space between the group heading and the next group
                    dt_bulk_selected: A list of selected items
-                   dt_actions: dictionary of actions
+                   dt_row_actions: list of actions (each is a dict)
                    dt_styles: dictionary of styles to be applied to a list of ids
                               for example:
                               {"warning" : [1,3,6,7,9],
@@ -690,6 +705,10 @@ class S3DataTable(object):
         # will then be parsed by s3.dataTable.js and the values used.
         config = Storage()
         config.id = id
+
+        # Py2 action-button labels are utf-8 encoded str (unicode in Py3)
+        config.utf8 = True if PY2 else False
+
         attr_get = attr.get
         config.dom = attr_get("dt_dom", settings.get_ui_datatables_dom())
         config.lengthMenu = attr_get("dt_lengthMenu",
@@ -705,10 +724,10 @@ class S3DataTable(object):
 
         ajaxUrl = attr_get("dt_ajax_url", None)
         if not ajaxUrl:
-            url = URL(c=request.controller,
-                      f=request.function,
-                      args=request.args,
-                      vars=request.get_vars,
+            url = URL(c = request.controller,
+                      f = request.function,
+                      args = request.args,
+                      vars = request.get_vars,
                       )
             ajaxUrl = s3_set_extension(url, "aadata")
         config.ajaxUrl = ajaxUrl
@@ -732,6 +751,8 @@ class S3DataTable(object):
             bulkActions = [bulkActions]
         config.bulkActions = bulkActions
         config.bulkCol = bulkCol = attr_get("dt_bulk_col", 0)
+        if attr_get("dt_bulk_single"):
+            config.bulkSingle = 1
         action_col = attr_get("dt_action_col", 0)
         if bulkActions and bulkCol <= action_col:
             action_col += 1
@@ -765,7 +786,7 @@ class S3DataTable(object):
 
         # Activate double scroll and inject jQuery plugin
         if not settings.get_ui_datatables_responsive():
-            double_scroll = attr.get("dt_double_scroll")
+            double_scroll = attr_get("dt_double_scroll")
             if double_scroll is None:
                 double_scroll = settings.get_ui_datatables_double_scroll()
             if double_scroll:
@@ -968,7 +989,7 @@ class S3DataTable(object):
 class S3DataList(object):
     """
         Class representing a list of data cards
-        -clien-side implementation in static/scripts/S3/s3.dataLists.js
+        -client-side implementation in static/scripts/S3/s3.dataLists.js
     """
 
     # -------------------------------------------------------------------------
@@ -1175,7 +1196,7 @@ class S3DataList(object):
         while group:
             yield group
             group = list(islice(iterable, length))
-        raise StopIteration
+        return
 
 # =============================================================================
 class S3DataListLayout(object):

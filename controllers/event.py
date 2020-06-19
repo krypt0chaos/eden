@@ -145,7 +145,7 @@ def incident():
                         # Already removed
                         pass
 
-                elif cname in ("asset", "human_resource", "organisation", "site"):
+                elif cname in ("asset", "human_resource", "event_organisation", "organisation", "site"):
                     atable = s3db.table("budget_allocation")
                     if atable:
                         field = atable.budget_entity_id
@@ -171,7 +171,10 @@ $.filterOptionsS3({
                         s3.jquery_ready.append(script)
 
                     # Default Event in the link to that of the Incident
-                    ltable = s3db.table("event_%s" % cname)
+                    if cname == "event_organisation":
+                        ltable = s3db.table(cname)
+                    else:
+                        ltable = s3db.table("event_%s" % cname)
                     if ltable:
                         f = ltable.event_id
                         f.default = r.record.event_id
@@ -321,7 +324,7 @@ def job_title():
 
     s3.filter = FS("type").belongs((4,))
 
-    if not auth.s3_has_role(ADMIN):
+    if not auth.s3_has_role("ADMIN"):
         s3.filter &= auth.filter_by_root_org(table)
 
     return s3_rest_controller("hrm")

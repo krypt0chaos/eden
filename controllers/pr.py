@@ -5,7 +5,6 @@
 """
 
 module = request.controller
-resourcename = request.function
 
 # -----------------------------------------------------------------------------
 # Options Menu (available in all Functions' Views)
@@ -41,10 +40,7 @@ def s3_menu_postp():
 def index():
     """ Module's Home Page """
 
-    try:
-        module_name = settings.modules[module].name_nice
-    except:
-        module_name = T("Person Registry")
+    module_name = settings.modules[module].get("name_nice", T("Person Registry"))
 
     # Load Model
     s3db.table("pr_address")
@@ -111,6 +107,7 @@ def person():
                 #(s3db.auth_user.registration_key != "disabled")
 
     # Organisation Dependent Fields
+    # @ToDo: Deprecate (only used by IFRC template)
     set_org_dependent_field = settings.set_org_dependent_field
     set_org_dependent_field("pr_person_details", "father_name")
     set_org_dependent_field("pr_person_details", "mother_name")
@@ -170,6 +167,7 @@ def person():
 
     # Contacts Tabs
     contacts_tabs = []
+    resourcename = request.function
     set_method = s3db.set_method
     setting = settings.get_pr_contacts_tabs()
     if "all" in setting:
@@ -521,13 +519,31 @@ def education():
         return True
     s3.prep = prep
 
-    return s3_rest_controller("pr", "education")
+    return s3_rest_controller()
 
 # -----------------------------------------------------------------------------
 def education_level():
     """ RESTful CRUD controller """
 
-    return s3_rest_controller("pr", "education_level")
+    return s3_rest_controller()
+
+# -----------------------------------------------------------------------------
+def language():
+    """ RESTful CRUD controller """
+
+    def prep(r):
+        if r.method in ("create", "create.popup", "update", "update.popup"):
+            # Coming from Profile page?
+            person_id = get_vars.get("~.person_id", None)
+            if person_id:
+                field = s3db.pr_language.person_id
+                field.default = person_id
+                field.readable = field.writable = False
+
+        return True
+    s3.prep = prep
+
+    return s3_rest_controller()
 
 # -----------------------------------------------------------------------------
 def occupation_type():
@@ -604,12 +620,24 @@ def slot():
     return s3_rest_controller()
 
 # -----------------------------------------------------------------------------
+def date_formula():
+    """ RESTful CRUD controller """
+
+    return s3_rest_controller()
+
+# -----------------------------------------------------------------------------
+def time_formula():
+    """ RESTful CRUD controller """
+
+    return s3_rest_controller()
+
+# -----------------------------------------------------------------------------
 def tooltip():
     """ Ajax tooltips """
 
     if "formfield" in request.vars:
         response.view = "pr/ajaxtips/%s.html" % request.vars.formfield
-    return dict()
+    return {}
 
 # =============================================================================
 def filter():

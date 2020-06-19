@@ -3,7 +3,7 @@
 """
     S3Codec to produce printable data cards (e.g. ID cards)
 
-    @copyright: 2018-2019 (c) Sahana Software Foundation
+    @copyright: 2018-2020 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -32,11 +32,6 @@ __all__ = ("S3PDFCard",
            )
 
 try:
-    from cStringIO import StringIO    # Faster, where available
-except ImportError:
-    from StringIO import StringIO
-
-try:
     from reportlab.lib.pagesizes import A4, LETTER, landscape, portrait
     from reportlab.platypus import BaseDocTemplate, PageTemplate, Flowable, \
                                    Frame, NextPageTemplate, PageBreak
@@ -52,6 +47,7 @@ except ImportError:
 
 from gluon import current, HTTP
 
+from s3compat import BytesIO
 from ..s3codec import S3Codec
 from ..s3resource import S3Resource
 from ..s3utils import s3_str
@@ -182,7 +178,7 @@ class S3PDFCard(S3Codec):
                                        )
 
         # Build the doc
-        output_stream = StringIO()
+        output_stream = BytesIO()
         doc.build(flowables,
                   output_stream,
                   #canvasmaker=canvas.Canvas,   # is default
@@ -719,7 +715,7 @@ class S3PDFCardLayout(Flowable):
             Helper function to draw an image
             - requires PIL (required for ReportLab image handling anyway)
 
-            @param img: the image (filename or StringIO buffer)
+            @param img: the image (filename or BytesIO buffer)
             @param x: drawing position
             @param y: drawing position
             @param width: the target width of the image (in points)

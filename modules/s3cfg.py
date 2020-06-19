@@ -4,7 +4,7 @@
 
     @requires: U{B{I{gluon}} <http://web2py.com>}
 
-    @copyright: 2009-2019 (c) Sahana Software Foundation
+    @copyright: 2009-2020 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -27,7 +27,6 @@
     WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
     OTHER DEALINGS IN THE SOFTWARE.
-
 """
 
 __all__ = ("S3Config",)
@@ -37,6 +36,7 @@ from collections import OrderedDict
 from gluon import current, URL
 from gluon.storage import Storage
 
+from s3compat import basestring, INTEGER_TYPES
 from s3theme import FORMSTYLES
 
 class S3Config(Storage):
@@ -131,8 +131,8 @@ class S3Config(Storage):
     # fontset format -> [normal-version, bold-version]
     # defaults to ["Helvetica", "Helvetica-Bold"] if not-specified here
     # Requires installation of appropriate font - e.g. using import_font in tasks.cfg
-    # Unifont can be downloaded from http://unifoundry.com/pub/unifont-7.0.06/font-builds/unifont-7.0.06.ttf
-    fonts = {"ar": ["unifont", "unifont"],
+    # Unifont can be downloaded from http://unifoundry.com/unifont/index.html
+    fonts = {"ar": ["unifont", "unifont"], # Note that this isn't an ideal font for Arabic as it doesn't support reshaping. We use arabic_reshaper to improve this.
              #"dv": ["unifont", "unifont"],
              #"dz": ["unifont", "unifont"],
              "km": ["unifont", "unifont"],
@@ -140,10 +140,12 @@ class S3Config(Storage):
              "mn": ["unifont", "unifont"],
              "my": ["unifont", "unifont"],
              "ne": ["unifont", "unifont"],
+             "pl": ["unifont", "unifont"],
              "prs": ["unifont", "unifont"],
              "ps": ["unifont", "unifont"],
-             #"th": ["unifont", "unifont"],
+             "th": ["unifont", "unifont"],
              "tr": ["unifont", "unifont"],
+             "ur": ["unifont", "unifont"],
              "vi": ["unifont", "unifont"],
              "zh-cn": ["unifont", "unifont"],
              "zh-tw": ["unifont", "unifont"],
@@ -167,6 +169,7 @@ class S3Config(Storage):
         self.database = Storage()
         self.dc = Storage()
         self.deploy = Storage()
+        self.disease = Storage()
         self.doc = Storage()
         self.dvr = Storage()
         self.edu = Storage()
@@ -628,6 +631,59 @@ class S3Config(Storage):
         else:
             return None
 
+    def get_auth_add_role(self):
+        """
+            Custom Function to add a Role
+            - called by S3RoleManager UI
+            - useful for automatically adding subsidiary roles
+        """
+        return self.auth.get("add_role", None)
+
+    def get_auth_remove_role(self):
+        """
+            Custom Function to remove a Role
+            - called by S3RoleManager UI
+            - useful for automatically removing subsidiary roles
+        """
+        return self.auth.get("remove_role", None)
+
+    def get_auth_masterkey(self):
+        """
+            Allow authentication with master key (= a single key instead of
+            username+password)
+        """
+        return self.auth.get("masterkey", False)
+
+    def get_auth_masterkey_app_key(self):
+        """
+            App key for clients using master key authentication
+            - a string (recommended length 32 chars, random pattern)
+            - specific for the deployment (i.e. not template)
+            - should be configured in 000_config.py (alongside hmac_key)
+        """
+        return self.auth.get("masterkey_app_key")
+
+    def get_auth_masterkey_token_ttl(self):
+        """
+            The time-to-live for master key auth tokens in seconds
+            - tokens must survive two request cycles incl. prep, so
+              TTL shouldn't be too short with slow network/server
+            - should be short enough to prevent unused tokens from
+              lingering
+        """
+        return self.auth.get("masterkey_token_ttl", 600)
+
+    def get_auth_masterkey_context(self):
+        """
+            Getter for master key context information
+            - a JSON-serializable dict with context data, or
+            - a function that takes a master key (Row) and returns such a dict
+
+            NB the getter should not expose the master key itself
+               in the context dict!
+        """
+        return self.auth.get("masterkey_context")
+
     def get_security_self_registration(self):
         """
             Whether Users can register themselves
@@ -671,8 +727,17 @@ class S3Config(Storage):
         return self.auth.get("always_notify_approver", True)
 
     def get_auth_login_next(self):
-        """ Which page to go to after login """
+        """
+            Which page to go to after login
+            - can be a callable
+        """
         return self.auth.get("login_next", URL(c="default", f="index"))
+
+    def get_auth_login_next_always(self):
+        """
+            Whether the login_next overrides the _next variable
+        """
+        return self.auth.get("login_next_always", False)
 
     def get_auth_show_link(self):
         return self.auth.get("show_link", True)
@@ -680,18 +745,18 @@ class S3Config(Storage):
     def get_auth_registration_link_user_to(self):
         """
             Link User accounts to none or more of:
-            * Staff
-            * Volunteer
-            * Member
+            * staff
+            * volunteer
+            * member
         """
         return self.auth.get("registration_link_user_to")
 
     def get_auth_registration_link_user_to_default(self):
         """
             Link User accounts to none or more of:
-            * Staff
-            * Volunteer
-            * Member
+            * staff
+            * volunteer
+            * member
             Should be an iterable.
         """
         return self.auth.get("registration_link_user_to_default")
@@ -854,6 +919,16 @@ class S3Config(Storage):
                    )
         return self.__lazy("auth", "realm_entity_types", default=default)
 
+    def get_auth_privileged_roles(self):
+        """
+            Roles a non-ADMIN user can only assign if they have
+            a certain required role themselves:
+            - a tuple|list of role UUIDs = user must have the roles
+              themselves in order to assign them
+            - a dict {assignable_role:required_role}
+        """
+        return self.__lazy("auth", "privileged_roles", default=[])
+
     def get_auth_realm_entity(self):
         """ Hook to determine the owner entity of a record """
         return self.auth.get("realm_entity")
@@ -909,6 +984,9 @@ class S3Config(Storage):
             ("super", T("Super Editor"))
         ]))
 
+    def get_auth_approve_user_message(self):
+        return self.auth.get("auth_approve_user_message", None)
+
     def get_auth_set_presence_on_login(self):
         return self.auth.get("set_presence_on_login", False)
     def get_auth_ignore_levels_for_presence(self):
@@ -941,6 +1019,7 @@ class S3Config(Storage):
             System Name - for the UI & Messaging
         """
         return self.base.get("system_name", current.T("Sahana Eden Humanitarian Management Platform"))
+
     def get_system_name_short(self):
         """
             System Name (Short Version) - for the UI & Messaging
@@ -978,7 +1057,7 @@ class S3Config(Storage):
 
     def get_base_guided_tour(self):
         """ Whether the guided tours are enabled """
-        return self.base.get("guided_tour", False)
+        return self.base.get("guided_tour", self.has_module("tour"))
 
     def get_base_public_url(self):
         """
@@ -1207,9 +1286,9 @@ class S3Config(Storage):
         currencies = self.__lazy("fin", "currencies", {})
         if currencies == {}:
             currencies = {
-                "EUR" : "Euros",
-                "GBP" : "Great British Pounds",
-                "USD" : "United States Dollars",
+                "EUR": "Euros",
+                "GBP": "Great British Pounds",
+                "USD": "United States Dollars",
             }
         return currencies
 
@@ -1741,8 +1820,9 @@ class S3Config(Storage):
             fallback if the client timezone or UTC offset can not be
             determined (e.g. user not logged in, or not browser-based)
 
-            * A list of available timezones can be retrieved with:
-
+            * A list of available timezones can be viewed at:
+                https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+              or retrieved with:
               import os, tarfile, dateutil.zoneinfo
               path = os.path.abspath(os.path.dirname(dateutil.zoneinfo.__file__))
               zonesfile = tarfile.TarFile.open(os.path.join(path, 'dateutil-zoneinfo.tar.gz'))
@@ -1908,13 +1988,20 @@ class S3Config(Storage):
 
         excluded_fields = self.pdf.get("excluded_fields")
         if excluded_fields is None:
-            excluded_fields = {"hms_hospital" : ["hrm_human_resource",
-                                                 ],
-                               "pr_group" : ["pr_group_membership",
-                                             ],
+            excluded_fields = {"hms_hospital": ["hrm_human_resource",
+                                                ],
+                               "pr_group": ["pr_group_membership",
+                                            ],
                                }
 
         return excluded_fields.get(resourcename, [])
+
+    def get_pdf_max_rows(self):
+        """
+            Maximum number of records in a single PDF table/list export
+                - None for unlimited
+        """
+        return self.base.get("pdf_max_rows", 1000)
 
     # -------------------------------------------------------------------------
     # XLS Export Settings
@@ -2472,6 +2559,12 @@ class S3Config(Storage):
         """
         return self.__lazy("ui", "organizer_time_format", None)
 
+    def get_ui_organizer_snap_duration(self):
+        """
+            Snap raster width in organizer (hh:mm:ss), default 00:15:00
+        """
+        return self.__lazy("ui", "organizer_snap_duration", None)
+
     # =========================================================================
     # Messaging
     #
@@ -2559,6 +2652,12 @@ class S3Config(Storage):
 
     # -------------------------------------------------------------------------
     # Notifications
+    def get_msg_notify_check_subscriptions(self):
+        """
+            Whether to Check Subscriptions
+        """
+        return self.msg.get("notify_check_subscriptions", False)
+
     def get_msg_notify_subject(self):
         """
             Template for the subject line in update notifications.
@@ -3058,11 +3157,11 @@ class S3Config(Storage):
         # Else fallback to the default OID
         return self.cap.get("identifier_oid", "")
 
-    def get_cap_expire_offset(self):
+    def get_cap_info_effective_period(self):
         """
-            Offset period for expiration
+            The period (in days) after which alert info segments expire
         """
-        return self.cap.get("expire_offset", 2)
+        return self.cap.get("info_effective_period", 2)
 
     def get_cap_codes(self):
         """
@@ -3377,25 +3476,9 @@ class S3Config(Storage):
     # -------------------------------------------------------------------------
     # DC: Data Collection
     #
-    def get_dc_response_label(self):
-        """
-            Label for Responses
-            - 'Assessment;
-            - 'Response' (default if set to None)
-            - 'Survey'
-        """
-        return self.dc.get("response_label", "Assessment")
-
-    def get_dc_unique_question_names_per_template(self):
-        """
-            Deduplicate Questions by Name/Template
-             - needed for importing multiple translations
-        """
-        return self.dc.get("unique_question_names_per_template", False)
-
     def get_dc_mobile_data(self):
         """
-            Whether Mobile Clients should download Assessments
+            Whether Mobile Clients should download Assessments (Data not just Forms)
             - e.g. when these are created through Targetting
         """
         return self.dc.get("mobile_data", False)
@@ -3406,9 +3489,95 @@ class S3Config(Storage):
         """
         return self.dc.get("mobile_inserts", True)
 
+    def get_dc_response_label(self):
+        """
+            Label for Responses
+            - 'Assessment;
+            - 'Response' (default if set to None)
+            - 'Survey'
+        """
+        return self.dc.get("response_label", "Assessment")
+
+    def get_dc_response_mobile(self):
+        """
+            Whether Assessments are filled-out on the EdenMobile App
+        """
+        return self.dc.get("response_mobile", True)
+
+    def get_dc_response_web(self):
+        """
+            Whether Assessments are filled-out on the Web interface
+        """
+        return self.dc.get("response_web", True)
+
+    def get_dc_target_status(self):
+        """
+            Whether Assessment Targets have Statuses
+        """
+        return self.dc.get("target_status", False)
+
+    def get_dc_unique_question_names_per_template(self):
+        """
+            Deduplicate Questions by Name/Template
+             - needed for importing multiple translations
+        """
+        return self.dc.get("unique_question_names_per_template", False)
+
+    def get_dc_likert_options(self):
+        """
+            Likert Scales & Options
+        """
+        return self.dc.get("likert_options", {1: ["Very appropriate",
+                                                  "Somewhat appropriate",
+                                                  "Neither appropriate nor inappropriate",
+                                                  "Somewhat inappropriate",
+                                                  "Very inappropriate",
+                                                  ],
+                                              2: ["Extremely confident",
+                                                  "Very confident",
+                                                  "Moderately confident",
+                                                  "Slightly confident",
+                                                  "Not confident at all",
+                                                  ],
+                                              3: ["Always",
+                                                  "Often",
+                                                  "Occasionally",
+                                                  "Rarely",
+                                                  "Never",
+                                                  ],
+                                              4: ["Extremely safe",
+                                                  "Very safe",
+                                                  "Moderately safe",
+                                                  "Slightly safe",
+                                                  "Not safe at all",
+                                                  ],
+                                              5: ["Very satisfied",
+                                                  "Somewhat satisfied",
+                                                  "Neither satisfied nor dissatisfied",
+                                                  "Somewhat dissatisfied",
+                                                  "Very dissatisfied",
+                                                  ],
+                                              6: ["smiley-1",
+                                                  "smiley-2",
+                                                  "smiley-3",
+                                                  "smiley-4",
+                                                  "smiley-6",
+                                                  ],
+                                              7: ["smiley-3",
+                                                  "smiley-4",
+                                                  "smiley-5",
+                                                  ],
+                                              })
+
     # -------------------------------------------------------------------------
     # Deployments
     #
+    def get_deploy_alerts(self):
+        """
+            Whether the system is used to send Alerts
+        """
+        return self.__lazy("deploy", "alerts", default=True)
+
     def get_deploy_cc_groups(self):
         """
             List of Group names that are cc'd on Alerts
@@ -3427,6 +3596,14 @@ class S3Config(Storage):
             Whether Alert recipients should be selected manually
         """
         return self.deploy.get("manual_recipients", True)
+
+    def get_deploy_member_filters(self):
+        """
+            Custom set of filter_widgets for members (hrm_human_resource),
+            used in custom methods for member selection, e.g. deploy_apply
+            or deploy_alert_select_recipients
+        """
+        return self.__lazy("deploy", "member_filters", default=None)
 
     def get_deploy_post_to_twitter(self):
         """
@@ -3456,6 +3633,27 @@ class S3Config(Storage):
             e.g. 'RDRT', 'RIT'
         """
         return self.deploy.get("team_label", "Deployable")
+
+    # -------------------------------------------------------------------------
+    # Disease Tracking and Monitoring
+    #
+    def get_disease_case_number(self):
+        """
+            Use case numbers in disease tracking
+        """
+        return self.disease.get("case_number", False)
+
+    def get_disease_case_id(self):
+        """
+            Use personal ID (pe_label) in disease tracking
+        """
+        return self.disease.get("case_id", True)
+
+    def get_disease_treatment(self):
+        """
+            Use a treatment notes journal for cases
+        """
+        return self.disease.get("treatment", False)
 
     # -------------------------------------------------------------------------
     # Doc Options
@@ -3685,11 +3883,17 @@ class S3Config(Storage):
         return self.get_dvr_response_planning() and \
                self.__lazy("dvr", "response_due_date", default=False)
 
+    def get_dvr_response_use_time(self):
+        """
+            Use date+time for responses rather than just date
+        """
+        return self.__lazy("dvr", "response_use_time", default=False)
+
     def get_dvr_response_types(self):
         """
             Use response type categories
         """
-        return self.dvr.get("response_types", True)
+        return self.__lazy("dvr", "response_types", default=True)
 
     def get_dvr_response_types_hierarchical(self):
         """
@@ -3837,6 +4041,14 @@ class S3Config(Storage):
             Whether to show the impact tab for events
         """
         return self.event.get("impact_tab", True)
+
+    def get_incident_label(self):
+        """
+            Whether Incidents are called Incidents or Tickets
+            - default: None = Incident
+            - valid options: "Ticket"
+        """
+        return self.event.get("incident_label", None)
 
     def get_incident_dispatch_tab(self):
         """
@@ -4336,12 +4548,24 @@ class S3Config(Storage):
 
     def get_hrm_vol_availability_tab(self):
         """
+            @ToDo: Deprecate
             Whether to use Availability Tab for Volunteers
             Options:
                 None
                 True
         """
         return self.__lazy("hrm", "vol_availability_tab", default=None)
+
+    def get_hrm_unavailability(self):
+        """
+            Whether to use Unavailability for Staff/Volunteers
+            - shows tab/profile widget
+            - adds filter
+            Options:
+                None
+                True
+        """
+        return self.__lazy("hrm", "unavailability", default=None)
 
     def get_hrm_vol_experience(self):
         """
@@ -4368,6 +4592,14 @@ class S3Config(Storage):
         """
         return self.__lazy("hrm", "vol_service_record_manager",
                            default=current.T("Branch Coordinator"))
+
+    def get_hrm_delegation_workflow(self):
+        """
+            The type of workflow used for delegations:
+            - "Application": the person applies for the delegation
+            - "Request"    : the receiving org requests the delegation
+        """
+        return self.hrm.get("delegation_workflow", "Request")
 
     # -------------------------------------------------------------------------
     # Inventory Management Settings
@@ -4549,8 +4781,8 @@ class S3Config(Storage):
     #
     def get_mobile_forms(self):
         """
-            Configure mobile forms - a list of items, or a callable returning
-            a list of items.
+            Configure mobile forms - a list of items, or a callable accepting
+            a auth_masterkey.id as parameter and returning a list of items.
 
             Item formats:
                 "tablename"
@@ -4568,13 +4800,19 @@ class S3Config(Storage):
             Example:
                 settings.mobile.forms = [("Request", "req_req")]
         """
-        return self.__lazy("mobile", "forms", [])
+        return self.mobile.get("forms", [])
 
     def get_mobile_dynamic_tables(self):
         """
             Expose mobile forms for dynamic tables
         """
         return self.mobile.get("dynamic_tables", True)
+
+    def get_mobile_masterkey_filter(self):
+        """
+            Filter mobile forms by master key
+        """
+        return self.mobile.get("masterkey_filter", False)
 
     # -------------------------------------------------------------------------
     # Organisations
@@ -4592,7 +4830,7 @@ class S3Config(Storage):
         """
         default_organisation = self.__lazy("org", "default_organisation", default=None)
         if default_organisation:
-            if not isinstance(default_organisation, (int, long)):
+            if not isinstance(default_organisation, INTEGER_TYPES):
                 # Check Session cache
                 default_organisation_id = current.session.s3.default_organisation_id
                 if default_organisation_id:
@@ -4621,7 +4859,7 @@ class S3Config(Storage):
         """
         default_site = self.org.get("default_site", None)
         if default_site:
-            if not isinstance(default_site, (int, long)):
+            if not isinstance(default_site, INTEGER_TYPES):
                 # Check Session cache
                 default_site_id = current.session.s3.default_site_id
                 if default_site_id:
@@ -4707,9 +4945,15 @@ class S3Config(Storage):
 
     def get_org_facilities_tab(self):
         """
-            Whether to show a Tab for Facilities
+            Whether to show a Tab for Facilities on Organisations
         """
         return self.org.get("facilities_tab", True)
+
+    def get_org_facility_shifts(self):
+        """
+            Whether to show a Tab for Shifts on Offices & Facilities
+        """
+        return self.org.get("facility_shifts", True)
 
     def get_org_groups(self):
         """
@@ -4717,6 +4961,9 @@ class S3Config(Storage):
             & what their name is:
             'Coalition'
             'Network'
+
+            NB If changing this after 1st_run then need to
+               create the OrgGroupAdmin role manually if-needed
         """
         return self.org.get("groups", False)
 
@@ -4841,13 +5088,6 @@ class S3Config(Storage):
         """
         return self.org.get("site_check")
 
-    def get_org_summary(self):
-        """
-            Whether to use Summary fields for Organisation/Office:
-                # National/International staff
-        """
-        return self.org.get("summary", False)
-
     def set_org_dependent_field(self,
                                 tablename=None,
                                 fieldname=None,
@@ -4947,6 +5187,14 @@ class S3Config(Storage):
             Whether to hide the third gender ("Other")
         """
         return self.__lazy("pr", "hide_third_gender", default=True)
+
+    def get_pr_nationality_explicit_unclear(self):
+        """
+            Have an explicit "unclear" option for nationality, useful
+            when the field shall be mandatory yet allow for cases
+            where the nationality of a person is unclear
+        """
+        return self.pr.get("nationality_explicit_unclear", False)
 
     def get_pr_import_update_requires_email(self):
         """
@@ -5360,12 +5608,6 @@ class S3Config(Storage):
         """
         return self.project.get("organisation_lead_role", 1)
 
-    def get_project_task_tag(self):
-        """
-            Use Tags in Tasks
-        """
-        return self.project.get("task_tag", False)
-
     def get_project_task_status_opts(self):
         """
             The list of options for the Status of a Task.
@@ -5493,6 +5735,10 @@ class S3Config(Storage):
     def get_req_skill_quantities_writable(self):
         """ Whether People Quantities should be manually editable """
         return self.req.get("skill_quantities_writable", False)
+
+    def get_req_summary(self):
+        # Whether to use Summary page for Requests
+        return self.req.get("summary", False)
 
     def get_req_pack_values(self):
         """

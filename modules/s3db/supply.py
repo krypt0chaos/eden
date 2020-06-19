@@ -2,7 +2,7 @@
 
 """ Sahana Eden Supply Model
 
-    @copyright: 2009-2019 (c) Sahana Software Foundation
+    @copyright: 2009-2020 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -30,6 +30,7 @@
 __all__ = ("S3SupplyModel",
            "S3SupplyDistributionModel",
            "S3SupplyDistributionDVRActivityModel",
+           "S3SupplyPersonModel",
            "supply_item_rheader",
            "supply_item_controller",
            "supply_item_entity_controller",
@@ -51,6 +52,7 @@ from gluon import *
 from gluon.storage import Storage
 
 from ..s3 import *
+from s3compat import xrange
 from s3dal import Row
 from s3layouts import S3PopupLink
 
@@ -1374,10 +1376,11 @@ class S3SupplyDistributionModel(S3Model):
                                           "reference %s" % tablename,
                                           ondelete = "CASCADE",
                                           #represent = represent,
-                                          requires = IS_ONE_OF(db,
-                                                        "%s.id" % tablename,
-                                                        #represent,
-                                                        ),
+                                          requires = IS_EMPTY_OR(
+                                                        IS_ONE_OF(db,
+                                                            "%s.id" % tablename,
+                                                            #represent,
+                                                            )),
                                           )
 
         # ---------------------------------------------------------------------
@@ -1393,22 +1396,22 @@ class S3SupplyDistributionModel(S3Model):
             query = (table.deleted == False)
             min_field = table.date.min()
             date_min = db(query).select(min_field,
-                                        orderby=min_field,
-                                        limitby=(0, 1)
+                                        orderby = min_field,
+                                        limitby = (0, 1)
                                         ).first()
             start_year = date_min and date_min[min_field].year
 
             max_field = table.date.max()
             date_max = db(query).select(max_field,
                                         orderby=max_field,
-                                        limitby=(0, 1)
+                                        limitby = (0, 1)
                                         ).first()
             last_start_year = date_max and date_max[max_field].year
 
             max_field = table.end_date.max()
             date_max = db(query).select(max_field,
                                         orderby=max_field,
-                                        limitby=(0, 1)
+                                        limitby = (0, 1)
                                         ).first()
             last_end_year = date_max and date_max[max_field].year
 
@@ -1436,25 +1439,25 @@ class S3SupplyDistributionModel(S3Model):
             #             label = T("Search Distributions"),
             #             ),
             S3LocationFilter("location_id",
-                             levels=levels,
-                             widget="multiselect"
+                             levels = levels,
+                             widget = "multiselect"
                              ),
             S3OptionsFilter("activity_id$activity_organisation.organisation_id",
-                            widget="multiselect"
+                            widget = "multiselect"
                             ),
             S3OptionsFilter("parameter_id",
                             label = T("Item"),
-                            widget="multiselect"
+                            widget = "multiselect"
                             ),
             # @ToDo: Range Slider using start_date & end_date
             #S3DateFilter("date",
             #             )
             # @ToDo: OptionsFilter working with Lazy VF
             #S3OptionsFilter("year",
-            #                label=T("Year"),
+            #                label = T("Year"),
             #                options = year_options,
-            #                widget="multiselect",
-            #                hidden=True,
+            #                widget = "multiselect",
+            #                hidden = True,
             #                ),
             ]
 
@@ -1475,9 +1478,9 @@ class S3SupplyDistributionModel(S3Model):
             filter_widgets.insert(0,
                 S3OptionsFilter("activity_id$sector_activity.sector_id",
                                 # Doesn't allow translation
-                                #represent="%(name)s",
-                                widget="multiselect",
-                                #hidden=True,
+                                #represent = "%(name)s",
+                                widget = "multiselect",
+                                #hidden = True,
                                 ))
 
         if settings.get_project_hazards():
@@ -1488,19 +1491,19 @@ class S3SupplyDistributionModel(S3Model):
             report_fields.append("activity_id$project_id")
             filter_widgets.append(
                 S3OptionsFilter("activity_id$project_id",
-                                widget="multiselect"
+                                widget = "multiselect"
                                 ),
                 #S3OptionsFilter("activity_id$project_id$organisation_id",
                 #                label = T("Lead Organization"),
-                #                widget="multiselect"
+                #                widget = "multiselect"
                 #                ),
                 #S3OptionsFilter("activity_id$project_id$partner.organisation_id",
                 #                label = T("Partners"),
-                #                widget="multiselect"),
+                #                widget = "multiselect"),
                 #S3OptionsFilter("activity_id$project_id$donor.organisation_id",
                 #                label = T("Donors"),
-                #                location_level="L1",
-                #                widget="multiselect")
+                #                location_level = "L1",
+                #                widget = "multiselect")
                 )
 
         if settings.get_project_themes():
@@ -1508,9 +1511,9 @@ class S3SupplyDistributionModel(S3Model):
             filter_widgets.append(
                 S3OptionsFilter("activity_id$project_id$theme_project.theme_id",
                                 # Doesn't allow translation
-                                #represent="%(name)s",
-                                widget="multiselect",
-                                #hidden=True,
+                                #represent = "%(name)s",
+                                widget = "multiselect",
+                                #hidden = True,
                                 ))
 
         for level in levels:
@@ -1555,6 +1558,15 @@ class S3SupplyDistributionModel(S3Model):
                   super_entity = "stats_data",
                   )
 
+        self.add_components(tablename,
+                            pr_person = {"link": "supply_distribution_person",
+                                         "joinby": "distribution_id",
+                                         "key": "person_id",
+                                         "actuate": "hide",
+                                         },
+                            supply_distribution_person = "distribution_id",
+                            )
+
         # ---------------------------------------------------------------------
         # Supply Distributions <> Named Beneficiaries Link Table
         #
@@ -1564,15 +1576,9 @@ class S3SupplyDistributionModel(S3Model):
                                        label = T("Head of Household"),
                                        ondelete = "CASCADE",
                                        ),
-                     Field("supply_distribution_id", "reference supply_distribution",
-                           label = T("Item"),
-                           ondelete = "CASCADE",
-                           #represent = represent,
-                           #requires = IS_ONE_OF(current.db, "supply_distribution.id",
-                           #                     #represent,
-                           #                     sort=True)),
-                           requires = IS_IN_DB(db, "supply_distribution.id"),
-                           ),
+                     distribution_id(label = T("Item"),
+                                     empty = False,
+                                     ),
                      Field("received", "boolean",
                            default = True,
                            label = T("Received?"),
@@ -1744,6 +1750,108 @@ class S3SupplyDistributionDVRActivityModel(S3Model):
         return {}
 
 # =============================================================================
+class S3SupplyPersonModel(S3Model):
+    """
+        Link table between People & Items
+        - e.g. Donations
+    """
+
+    names = ("supply_person_item",
+             "supply_person_item_status",
+             )
+
+    def model(self):
+
+        T = current.T
+        crud_strings = current.response.s3.crud_strings
+        define_table = self.define_table
+
+        # ---------------------------------------------------------------------
+        # Person Item Status
+        #
+        tablename = "supply_person_item_status"
+        define_table(tablename,
+                     Field("name", length=128, notnull=True, unique=True,
+                           label = T("Name"),
+                           requires = [IS_NOT_EMPTY(),
+                                       IS_LENGTH(128),
+                                       ],
+                           ),
+                     s3_comments(),
+                     *s3_meta_fields())
+
+        crud_strings[tablename] = Storage(
+            label_create = T("Add Status"),
+            title_display = T("Status Details"),
+            title_list = T("Statuses"),
+            title_update = T("Edit Status"),
+            #title_upload = T("Import Statuses"),
+            label_list_button = T("List Statuses"),
+            label_delete_button = T("Remove Status"),
+            msg_record_created = T("Status added"),
+            msg_record_modified = T("Status updated"),
+            msg_record_deleted = T("Status removed"),
+            msg_list_empty = T("No Statuses currently defined")
+        )
+
+        # Reusable Field
+        represent = S3Represent(lookup = tablename)
+        status_id = S3ReusableField("status_id", "reference %s" % tablename,
+                                    label = T("Status"),
+                                    ondelete = "SET NULL",
+                                    represent = represent,
+                                    requires = IS_EMPTY_OR(
+                                                IS_ONE_OF(current.db,
+                                                          "%s.id" % tablename,
+                                                          represent,
+                                                          )),
+                                    )
+
+        # ---------------------------------------------------------------------
+        # Link table between People & Items
+        #
+        tablename = "supply_person_item"
+        define_table(tablename,
+                     self.supply_item_id(comment = None,
+                                         empty = False,
+                                         ondelete = "CASCADE",
+                                         widget = None, # Dropdown not AC
+                                         ),
+                     self.pr_person_id(empty = False,
+                                       ondelete = "CASCADE",
+                                       ),
+                     status_id(), # empty = False (in templates as-required)
+                     # Requested By / Taken By
+                     self.org_organisation_id(ondelete = "SET NULL",
+                                              ),
+                     s3_comments(comment = None),
+                     *s3_meta_fields())
+
+        crud_strings[tablename] = Storage(
+            label_create = T("Add Item"),
+            title_display = T("Item Details"),
+            title_list = T("Items"),
+            title_update = T("Edit Item"),
+            #title_upload = T("Import Items"),
+            label_list_button = T("List Items"),
+            label_delete_button = T("Remove Item"),
+            msg_record_created = T("Item added"),
+            msg_record_modified = T("Item updated"),
+            msg_record_deleted = T("Item removed"),
+            msg_list_empty = T("No Items currently registered for this person")
+        )
+
+        self.configure(tablename,
+                       deduplicate = S3Duplicate(primary = ("item_id",
+                                                            "person_id",
+                                                            ),
+                                                 ),
+                       )
+
+        # Pass names back to global scope (s3.*)
+        return {}
+
+# =============================================================================
 class supply_ItemRepresent(S3Represent):
     """ Representation of Supply Items """
 
@@ -1771,11 +1879,11 @@ class supply_ItemRepresent(S3Represent):
             fields.append("supply_item.um")
 
         super(supply_ItemRepresent,
-              self).__init__(lookup="supply_item",
-                             fields=fields,
-                             show_link=show_link,
-                             translate=translate,
-                             multiple=multiple)
+              self).__init__(lookup = "supply_item",
+                             fields = fields,
+                             show_link = show_link,
+                             translate = translate,
+                             multiple = multiple)
 
     # -------------------------------------------------------------------------
     def lookup_rows(self, key, values, fields=None):

@@ -9,7 +9,11 @@ from s3 import S3ReportRepresent
 
 def config(settings):
     """
-        Settings for the SHARE Teamplate
+        Settings for the SHARE Template
+
+        Migration Issues:
+            req_need.name is now length=64
+            (SHARE can use req_need.description instead if the notnull=True removed)
     """
 
     T = current.T
@@ -595,7 +599,7 @@ def config(settings):
             _id = table.insert(channel_id=channel_id, function_name="parse_tweet", enabled=True)
             s3db.msg_parser_enable(_id)
 
-            run_async = current.s3task.async
+            run_async = current.s3task.run_async
             # Poll
             run_async("msg_poll", args=["msg_twitter_channel", channel_id])
 
@@ -1495,7 +1499,7 @@ S3.redraw_fns.push('tagit')''' % (T("Add tags here…"),
                        "comments",
                        ]
 
-        from controllers import project_ActivityRepresent
+        from .controllers import project_ActivityRepresent
         natable = s3db.req_need_activity
         #f = natable.activity_id
         #f.represent = project_ActivityRepresent()
@@ -1633,11 +1637,12 @@ S3.redraw_fns.push('tagit')''' % (T("Add tags here…"),
             on the homepage
         """
 
-        from controllers import HomepageStatistics
+        from .controllers import HomepageStatistics
         HomepageStatistics.update_data()
 
     settings.tasks.homepage_stats_update = homepage_stats_update
 
+    # -------------------------------------------------------------------------
     def req_need_line_update_stats(r, **attr):
         """
             Method to manually update the data files for the charts
@@ -1655,9 +1660,10 @@ S3.redraw_fns.push('tagit')''' % (T("Add tags here…"),
 
             if not current.auth.s3_has_role("ADMIN"):
                 # No, this is not open for everybody
-                r.unauthorized()
+                r.unauthorised()
             else:
-                current.s3task.async("settings_task", args=["homepage_stats_update"])
+                current.s3task.run_async("settings_task",
+                                         args = ["homepage_stats_update"])
                 current.session.confirmation = T("Statistics data update started")
 
                 from gluon import redirect
@@ -1671,6 +1677,8 @@ S3.redraw_fns.push('tagit')''' % (T("Add tags here…"),
         from gluon import IS_EMPTY_OR, IS_IN_SET, SPAN
 
         from s3 import S3Represent
+
+        s3db = current.s3db
 
         current.response.s3.crud_strings["req_need_line"]["title_map"] = T("Map of Needs")
 
@@ -1688,7 +1696,7 @@ S3.redraw_fns.push('tagit')''' % (T("Add tags here…"),
                                    ),
                            }
 
-        table = current.s3db.req_need_line
+        table = s3db.req_need_line
 
         f = table.status
         f.requires = IS_EMPTY_OR(IS_IN_SET(req_status_opts, zero = None))
@@ -1709,10 +1717,10 @@ S3.redraw_fns.push('tagit')''' % (T("Add tags here…"),
             f.label = T("GN")
 
         # Custom method to (manually) update homepage statistics
-        current.s3db.set_method("req", "need_line",
-                                method = "update_stats",
-                                action = req_need_line_update_stats,
-                                )
+        s3db.set_method("req", "need_line",
+                        method = "update_stats",
+                        action = req_need_line_update_stats,
+                        )
 
     settings.customise_req_need_line_resource = customise_req_need_line_resource
 
@@ -2135,7 +2143,7 @@ S3.redraw_fns.push('tagit')''' % (T("Add tags here…"),
                        ]
 
         if r.id and r.resource.tablename == tablename and r.record.need_id:
-            from controllers import req_NeedRepresent
+            from .controllers import req_NeedRepresent
             f = table.need_id
             f.represent = req_NeedRepresent()
             f.writable = False

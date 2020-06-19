@@ -2,7 +2,7 @@
 
 """ S3 Record Deletion
 
-    @copyright: 2018-2019 (c) Sahana Software Foundation
+    @copyright: 2018-2020 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -663,7 +663,7 @@ class S3Delete(object):
         db = current.db
         if db._lazy_tables:
             # Must roll out all lazy tables to detect dependencies
-            for tn in db._LAZY_TABLES.keys():
+            for tn in list(db._LAZY_TABLES.keys()):
                 db[tn]
 
         references = self.table._referenced_by

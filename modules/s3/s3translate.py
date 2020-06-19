@@ -2,7 +2,7 @@
 
 """ Translation API
 
-    @copyright: 2012-2019 (c) Sahana Software Foundation
+    @copyright: 2012-2020 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -35,6 +35,7 @@ from gluon import current
 from gluon.languages import read_dict, write_dict
 from gluon.storage import Storage
 
+from s3compat import PY2, BytesIO, STRING_TYPES, pickle
 from .s3fields import S3ReusableField
 
 """
@@ -635,17 +636,17 @@ class TranslateReadFiles(object):
         """
 
         try:
-            f = open(fileName)
+            f = open(fileName, "rb")
         except:
             path = os.path.split(__file__)[0]
             fileName = os.path.join(path, fileName)
             try:
-                f = open(fileName)
+                f = open(fileName, "rb")
             except:
                 return
 
         # Read all contents of file
-        fileContent = f.read()
+        fileContent = f.read().decode("utf-8")
         f.close()
 
         # Remove CL-RF and NOEOL characters
@@ -730,6 +731,19 @@ class TranslateReadFiles(object):
            using regular expressions
         """
 
+        html_js_file = open(filename, "rb")
+        try:
+            html_js = html_js_file.read().decode("utf-8").splitlines()
+        except UnicodeDecodeError:
+            try:
+                html_js = html_js_file.read().decode("latin-1").splitlines()
+            except UnicodeDecodeError:
+                current.log.warning("%s is not in either UTF-8 or LATIN-1 encoding" % filename)
+                return []
+            else:
+                current.log.warning("%s is in LATIN-1 encoding not UTF-8" % filename)
+        html_js_file.close()
+
         import re
 
         PY_STRING_LITERAL_RE = r'(?<=[^\w]T\()(?P<name>'\
@@ -740,18 +754,16 @@ class TranslateReadFiles(object):
         regex_trans = re.compile(PY_STRING_LITERAL_RE, re.DOTALL)
         findall = regex_trans.findall
 
-        html_js_file = open(filename)
         linecount = 0
         strings = []
         sappend = strings.append
 
-        for line in html_js_file:
+        for line in html_js:
             linecount += 1
             occur = findall(line)
             for s in occur:
                 sappend((linecount, s))
 
-        html_js_file.close()
         return strings
 
     # ---------------------------------------------------------------------
@@ -768,11 +780,11 @@ class TranslateReadFiles(object):
         COMMENT = "User supplied"
 
         if os.path.exists(user_file):
-            f = open(user_file, "r")
-            for line in f:
-                line = line.replace("\n", "").replace("\r", "")
-                strings.append((COMMENT, line))
+            f = open(user_file, "rb")
+            user_data = f.read().decode("utf-8").splitlines()
             f.close()
+            for line in user_data:
+                strings.append((COMMENT, line))
 
         return strings
 
@@ -791,16 +803,17 @@ class TranslateReadFiles(object):
         oappend = oldstrings.append
 
         if os.path.exists(user_file):
-            f = open(user_file, "r")
-            for line in f:
-                oappend(line)
+            f = open(user_file, "rb")
+            user_data = f.read().decode("utf-8").splitlines()
             f.close()
+            for line in user_data:
+                oappend(line)
 
         # Append user strings if not already present
         f = open(user_file, "a")
         for s in newstrings:
             if s not in oldstrings:
-                f.write(s)
+                f.write("%s\n" % s)
 
         f.close()
 
@@ -814,26 +827,33 @@ class TranslateReadFiles(object):
 
         from .s3import import S3BulkImporter
 
+
+
         # List of database strings
         database_strings = []
         dappend = database_strings.append
-        template_list = []
         base_dir = current.request.folder
         path = os.path
-        # If all templates flag is set we look in all templates' tasks.cfg file
+        join = path.join
         if all_template_flag:
-            template_dir = path.join(base_dir, "modules", "templates")
+            # If all templates flag is set we look in all templates' tasks.cfg file
+            template_dir = join(base_dir, "modules", "templates")
             files = os.listdir(template_dir)
             # template_list will have the list of all templates
+            template_list = []
             tappend = template_list.append
             for f in files:
-                curFile = path.join(template_dir, f)
+                curFile = join(template_dir, f)
                 baseFile = path.basename(curFile)
                 if path.isdir(curFile):
                     tappend(baseFile)
         else:
-            # Set current template.
-            template_list.append(current.deployment_settings.base.template)
+            # Just use current template
+            template = current.deployment_settings.get_template()
+            if isinstance(template, STRING_TYPES):
+                template_list = [template]
+            else:
+                template_list = template
 
         # List of fields which don't have an S3ReusableField defined but we
         # know we wish to translate
@@ -842,13 +862,21 @@ class TranslateReadFiles(object):
                             "stats_demographic_id",
                             )
 
+        # List of fields which have an S3ReusableField defined but we
+        # know we don't wish to translate
+        never_translate = ("gis_location_id",
+                           )
+
         # Use bulk importer class to parse tasks.cfg in template folder
         bi = S3BulkImporter()
         S = Strings()
         read_csv = S.read_csv
         for template in template_list:
-            pth = path.join(base_dir, "modules", "templates", template)
-            if path.exists(path.join(pth, "tasks.cfg")) == False:
+            if "." in template:
+                template = template.split(".")
+                template = join(*template)
+            pth = join(base_dir, "modules", "templates", template)
+            if path.exists(join(pth, "tasks.cfg")) is False:
                 continue
             bi.load_descriptor(pth)
 
@@ -865,6 +893,8 @@ class TranslateReadFiles(object):
                 if fieldname in always_translate:
                     translate = True
                     represent = Storage(fields = ["name"])
+                elif fieldname in never_translate:
+                    continue
                 elif hasattr(s3db, fieldname) is False:
                     continue
                 else:
@@ -985,19 +1015,8 @@ class Strings(object):
                                    "%s.py" % lang_code)
 
         data = read_dict(w2pfilename)
-        #try:
-        #    # Python 2.7
-        #    # - won't even compile
-        #    data = {k: v for k, v in data.iteritems() if k != v}
-        #except:
-        # Python 2.6
-        new_data = {}
-        for k, v in data.iteritems():
-            if k != v:
-                new_data[k] = v
-        data = new_data
 
-        write_dict(w2pfilename, data)
+        write_dict(w2pfilename, {k: v for k, v in data.items() if k != v})
 
     # ---------------------------------------------------------------------
     def export_file(self, langfile, modlist, filelist, filetype, all_template_flag):
@@ -1037,6 +1056,9 @@ class Strings(object):
                 templates = (templates,)
             group_files = A.grp.group_files
             for template in templates:
+                if "." in template:
+                    template = template.split(".")
+                    template = join(*template)
                 template_folder = join(folder, "modules", "templates", template)
                 group_files(template_folder)
 
@@ -1110,7 +1132,7 @@ class Strings(object):
             return self.write_xls(Strings, langcode)
         elif filetype == "po":
             # Create pootle file
-            return self.write_po(Strings)
+            return self.write_po(Strings, langcode)
 
     # ---------------------------------------------------------------------
     @staticmethod
@@ -1122,7 +1144,10 @@ class Strings(object):
 
         data = []
         dappend = data.append
-        f = open(fileName, "rb")
+        if PY2:
+            f = open(fileName, "r")
+        else:
+            f = open(fileName, "r", encoding="utf-8", newline="")
         transReader = csv.reader(f)
         for row in transReader:
             dappend(row)
@@ -1154,11 +1179,16 @@ class Strings(object):
 
         import csv
 
-        f = open(fileName, "wb")
+        if PY2:
+            f = open(fileName, "w")
+        else:
+            f = open(fileName, "w", encoding="utf-8")
 
         # Quote all the elements while writing
-        transWriter = csv.writer(f, delimiter=" ",
-                                 quotechar='"', quoting = csv.QUOTE_ALL)
+        transWriter = csv.writer(f,
+                                 delimiter = " ",
+                                 quotechar = '"',
+                                 quoting = csv.QUOTE_ALL)
         transWriter.writerow(("location", "source", "target"))
         for row in data:
             transWriter.writerow(row)
@@ -1166,28 +1196,30 @@ class Strings(object):
         f.close()
 
     # ---------------------------------------------------------------------
-    def write_po(self, data):
+    def write_po(self, data, langcode):
         """ Returns a ".po" file constructed from given strings """
 
-        from subprocess import call
-        from tempfile import NamedTemporaryFile
+        try:
+            from translate.convert.csv2po import main as csv2po
+        except ImportError:
+            message = "Need to install Translate Toolkit: pip install translate-toolkit"
+            return current.xml.json_message(False, 500, message=message)
+
+        #from tempfile import NamedTemporaryFile
+
         from gluon.contenttype import contenttype
 
-        f = NamedTemporaryFile(delete=False)
-        csvfilename = "%s.csv" % f.name
+        #f = NamedTemporaryFile(delete = False)
+        csvfilename = "%s.csv" % langcode
         self.write_csv(csvfilename, data)
 
-        g = NamedTemporaryFile(delete=False)
-        pofilename = "%s.po" % g.name
-        # Shell needed on Win32
-        # @ToDo: Copy relevant parts of Translate Toolkit internally to avoid external dependencies
-        call(["csv2po", "-i", csvfilename, "-o", pofilename], shell=True)
+        pofilename = "%s.po" % langcode
+        csv2po(["-i", csvfilename, "-o", pofilename]) # "--pot",
 
-        h = open(pofilename, "r")
+        h = open(pofilename, "rb")
 
         # Modify headers to return the po file for download
-        filename = "trans.po"
-        disposition = "attachment; filename=\"%s\"" % filename
+        disposition = "attachment; filename=\"%s\"" % pofilename
         response = current.response
         response.headers["Content-Type"] = contenttype(".po")
         response.headers["Content-disposition"] = disposition
@@ -1226,10 +1258,9 @@ class Strings(object):
 
         if option == "m":
             # Merge strings with existing .py file
-            keys = data.keys()
             olddata = read_dict(w2pfilename)
             for s in olddata:
-                if s not in keys:
+                if s not in data:
                     data[s] = olddata[s]
 
         write_dict(w2pfilename, data)
@@ -1242,13 +1273,12 @@ class Strings(object):
             location, original string and translated string as columns
         """
 
-        try:
-            from cStringIO import StringIO    # Faster, where available
-        except:
-            from StringIO import StringIO
         import xlwt
 
         from gluon.contenttype import contenttype
+        
+        #if not PY2:
+        #    import unicodedata
 
         # Define spreadsheet properties
         wbk = xlwt.Workbook("utf-8")
@@ -1264,9 +1294,17 @@ class Strings(object):
 
         row_num = 1
 
+        # Accent Folding - why?
+        #if PY2:
+        #    def string_escape(s):
+        #        return s.decode("string-escape").decode("utf-8")
+        #else:
+        #    def string_escape(s):
+        #        return unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode("utf-8")
+
         # Write the data to spreadsheet
         for (loc, d1, d2) in Strings:
-            d2 = d2.decode("string-escape").decode("utf-8")
+            #d2 = string_escape(d2)
             sheet.write(row_num, 0, loc, style)
             try:
                 sheet.write(row_num, 1, d1, style)
@@ -1281,7 +1319,7 @@ class Strings(object):
             sheet.col(colx).width = 15000
 
         # Initialize output
-        output = StringIO()
+        output = BytesIO()
 
         # Save the spreadsheet
         wbk.save(output)
@@ -1371,7 +1409,7 @@ class Pootle(object):
             # If user is not admin then overwrite option is not there
             br.form.find_control(name="overwrite").value = ["overwrite"]
             br.form.find_control(name ="upload_to").value = [upload_code]
-            br.form.add_file(open(filename), "text/plain", filename)
+            br.form.add_file(open(filename, "rb"), "text/plain", filename)
             br.submit()
         except:
             current.log.error("Error in Uploading form")
@@ -1387,10 +1425,6 @@ class Pootle(object):
 
         import requests
         import zipfile
-        try:
-            from cStringIO import StringIO    # Faster, where available
-        except:
-            from StringIO import StringIO
         from subprocess import call
         from tempfile import NamedTemporaryFile
 
@@ -1406,7 +1440,7 @@ class Pootle(object):
             current.log.error("Connection Error")
             return False
 
-        zipf = zipfile.ZipFile(StringIO(r.content))
+        zipf = zipfile.ZipFile(BytesIO(r.content))
         zipf.extractall()
         file_name_po = "%s.po" % lang_code
         file_name_py = "%s.py" % lang_code
@@ -1424,7 +1458,7 @@ class Pootle(object):
         postrings = S.read_w2p(w2pfilename)
         # Remove untranslated strings
         postrings = [tup for tup in postrings if tup[0] != tup[1]]
-        postrings.sort(key=lambda tup: tup[0])
+        postrings.sort(key = lambda tup: tup[0])
 
         os.unlink(file_name_po)
         os.unlink(w2pfilename)
@@ -1490,7 +1524,12 @@ class Pootle(object):
         if not ret:
             return
 
-        from subprocess import call
+        try:
+            from translate.convert.csv2po import main as csv2po
+        except ImportError:
+            message = "Need to install Translate Toolkit: pip install translate-toolkit"
+            return current.xml.json_message(False, 500, message=message)
+
         from tempfile import NamedTemporaryFile
 
         # returns pystrings if preference was True else returns postrings
@@ -1501,8 +1540,8 @@ class Pootle(object):
         data = []
         dappend = data.append
 
-        temp_csv = NamedTemporaryFile(delete=False)
-        csvfilename = "%s.csv" % temp_csv.name
+        f = NamedTemporaryFile(delete=False)
+        csvfilename = "%s.csv" % f.name
 
         if preference:
             # Only python file has been changed
@@ -1522,12 +1561,8 @@ class Pootle(object):
 
             S.write_csv(csvfilename, data)
 
-            temp_po = NamedTemporaryFile(delete=False)
-            pofilename = "%s.po" % temp_po.name
-
-            # Shell needed on Win32
-            # @ToDo: Copy relevant parts of Translate Toolkit internally to avoid external dependencies
-            call(["csv2po", "-i", csvfilename, "-o", pofilename], shell=True)
+            pofilename = "%s.po" % f.name
+            csv2po(["-i", csvfilename, "-o", pofilename])
             self.upload(lang_code, pofilename)
 
             # Clean up extra created files
@@ -1547,11 +1582,6 @@ class TranslateReportStatus(object):
         """
             Create master file of strings and their distribution in modules
         """
-
-        try:
-            import cPickle as pickle
-        except:
-            import pickle
 
         # Instantiate the translateAPI
         api = TranslateAPI()
@@ -1619,11 +1649,6 @@ class TranslateReportStatus(object):
             @ToDo: Generate fresh .py files with all relevant strings for this
                     (since we don't store untranslated strings)
         """
-
-        try:
-            import cPickle as pickle
-        except:
-            import pickle
 
         base_dir = current.request.folder
 

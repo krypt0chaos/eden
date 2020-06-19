@@ -2,7 +2,7 @@
 
 """ Sahana Eden Survey Tool
 
-    @copyright: 2011-2019 (c) Sahana Software Foundation
+    @copyright: 2011-2020 (c) Sahana Software Foundation
     @license: MIT
 
     ADAT - Assessment Data Analysis Tool
@@ -83,16 +83,12 @@ __all__ = ("S3SurveyTemplateModel",
 
 import json
 
-try:
-    from cStringIO import StringIO    # Faster, where available
-except ImportError:
-    from StringIO import StringIO
-
 from gluon import *
 from gluon.storage import Storage
 from gluon.sqlhtml import *
 
 from ..s3 import *
+from s3compat import BytesIO, StringIO, xrange
 from s3chart import S3Chart
 
 DEBUG = False
@@ -1911,8 +1907,8 @@ $('#chart_btn').click(function(){
                 gqstn_type = gqstn["type"]
                 analysis_tool = survey_analysis_type[gqstn_type](gqstn_id, ganswers)
                 mapdict = analysis_tool.uniqueCount()
-                label = mapdict.keys()
-                data = mapdict.values()
+                label = list(mapdict.keys())
+                data = list(mapdict.values())
                 legend_labels.append(T("Count of Question"))
             else:
                 qstn = survey_getQuestionFromCode(numeric_question, series_id)
@@ -2618,8 +2614,10 @@ class S3SurveyCompleteModel(S3Model):
             survey_complete into answer records held in survey_answer
         """
 
+        import codecs
         import csv
         import os
+        from tempfile import TemporaryFile
 
         strio = StringIO()
         strio.write(question_list)
@@ -2632,14 +2630,15 @@ class S3SurveyCompleteModel(S3Model):
                 row.insert(0, complete_id)
                 append(row)
 
-        from tempfile import TemporaryFile
-        csvfile = TemporaryFile()
-        writer = csv.writer(csvfile)
+        bio = TemporaryFile()
+        StreamWriter = codecs.getwriter("utf-8")
+        csv_file = StreamWriter(bio)
+        writer = csv.writer(csv_file)
         writerow = writer.writerow
         writerow(["complete_id", "question_code", "value"])
         for row in answer:
             writerow(row)
-        csvfile.seek(0)
+        bio.seek(0)
         xsl = os.path.join("applications",
                            current.request.application,
                            "static",
@@ -2648,7 +2647,7 @@ class S3SurveyCompleteModel(S3Model):
                            "survey",
                            "answer.xsl")
         resource = current.s3db.resource("survey_answer")
-        resource.import_xml(csvfile, stylesheet = xsl, format="csv",)
+        resource.import_xml(bio, stylesheet=xsl, format="csv")
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -2657,8 +2656,10 @@ class S3SurveyCompleteModel(S3Model):
             Private function used to save the locations to gis.location
         """
 
+        import codecs
         import csv
         import os
+        from tempfile import TemporaryFile
 
         last_loc_widget = None
         code_list = ["STD-L0", "STD-L1", "STD-L2", "STD-L3", "STD-L4"]
@@ -2689,13 +2690,14 @@ class S3SurveyCompleteModel(S3Model):
             else:
                 aappend("")
 
-        from tempfile import TemporaryFile
-        csvfile = TemporaryFile()
-        writer = csv.writer(csvfile)
+        bio = TemporaryFile()
+        StreamWriter = codecs.getwriter("utf-8")
+        csv_file = StreamWriter(bio)
+        writer = csv.writer(csv_file)
         headings += ["Code2", "Lat", "Lon"]
         writer.writerow(headings)
         writer.writerow(answer)
-        csvfile.seek(0)
+        bio.seek(0)
         xsl = os.path.join("applications",
                            current.request.application,
                            "static",
@@ -2704,7 +2706,7 @@ class S3SurveyCompleteModel(S3Model):
                            "gis",
                            "location.xsl")
         resource = current.s3db.resource("gis_location")
-        resource.import_xml(csvfile, stylesheet = xsl, format="csv")
+        resource.import_xml(bio, stylesheet = xsl, format="csv")
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -3273,7 +3275,7 @@ class survey_TranslateDownload(S3Method):
         except IOError:
             strings = {}
 
-        output = StringIO()
+        output = BytesIO()
 
         book = xlwt.Workbook(encoding="utf-8")
         sheet = book.add_sheet(record.language)
@@ -3307,8 +3309,7 @@ class survey_TranslateDownload(S3Method):
         row = 0
         sheet.write(row, 0, u"Original")
         sheet.write(row, 1, u"Translation")
-        original_list = original.keys()
-        original_list.sort()
+        original_list = sorted(original.keys())
 
         for text in original_list:
             row += 1
@@ -3364,7 +3365,7 @@ class survey_ExportResponses(S3Method):
         except AttributeError:
             r.error(404, T("Series not found!"))
 
-        output = StringIO()
+        output = BytesIO()
 
         book = xlwt.Workbook(encoding="utf-8")
         # Get all questions and write out as a heading
@@ -4540,7 +4541,7 @@ class S3QuestionTypeAbstractWidget(FormWidget):
         self.webwidget = StringWidget
         self.typeDescription = None
         self.startPosn = (0, 0)
-        self.xlsWidgetSize = (6, 0)
+        self.xlsWidgetSize = [6, 0]
         self.xlsMargin = [0, 0]
         self.langDict = {}
         self.label = True
@@ -5044,7 +5045,7 @@ class S3QuestionTypeAbstractWidget(FormWidget):
             return self.ANSWER_MISSING
         length = self.get("Length")
         if length is not None and length(data) > length:
-            return ANSWER_PARTLY_VALID # undefined!
+            return self.ANSWER_PARTLY_VALID
         return self.ANSWER_VALID
 
     # -------------------------------------------------------------------------
@@ -5219,17 +5220,17 @@ class S3QuestionTypeNumericWidget(S3QuestionTypeAbstractWidget):
         """
             This will validate the data passed in to the widget
         """
-        result = S3QuestionTypeAbstractWidget.validate(self, valueList)
-        if result != ANSWER_VALID:
+        result = S3QuestionTypeAbstractWidget.validate(self, valueList, qstn_id)
+        if result != self.ANSWER_VALID:
             return result
         #length = self.get("Length", 10)
         format = self.get("Format")
         data = value(valueList, 0) # value undefined!
         if format != None:
             try:
-                self.formattedValue(data, format)
+                self.formattedAnswer(data, format)
                 return self.ANSWER_VALID
-            except exceptions.ValueError:
+            except ValueError:
                 return self.ANSWER_INVALID
 
         return self.ANSWER_VALID
@@ -5295,40 +5296,40 @@ class S3QuestionTypeDateWidget(S3QuestionTypeAbstractWidget):
             try:
                 for month in monthList: # monthList undefined!
                     if month in rawDate:
-                        search = re, search("\D\d\d\D", rawDate)
+                        search = re.search(r"\D\d\d\D", rawDate)
                         if search:
                             day = search.group()
                         else:
-                            search = re, search("^\d\d\D", rawDate)
+                            search = re.search(r"^\d\d\D", rawDate)
                             if search:
                                 day = search.group()
                             else:
-                                search = re, search("\D\d\d$", rawDate)
+                                search = re.search(r"\D\d\d$", rawDate)
                                 if search:
                                     day = search.group()
                                 else:
-                                    search = re, search("\D\d\D", rawDate)
+                                    search = re.search(r"\D\d\D", rawDate)
                                     if search:
                                         day = "0" + search.group()
                                     else:
-                                        search = re, search("^\d\D", rawDate)
+                                        search = re.search(r"^\d\D", rawDate)
                                         if search:
                                             day = "0" + search.group()
                                         else:
-                                            search = re, search("\D\d$", rawDate)
+                                            search = re.search(r"\D\d$", rawDate)
                                             if search:
                                                 day = "0" + search.group()
                                             else:
                                                 raise ValueError
-                        search = re, search("\D\d\d\d\d\D", rawDate)
+                        search = re.search(r"\D\d\d\d\d\D", rawDate)
                         if search:
                             year = search.group()
                         else:
-                            search = re, search("^\d\d\d\d\D", rawDate)
+                            search = re.search(r"^\d\d\d\d\D", rawDate)
                             if search:
                                 year = search.group()
                             else:
-                                search = re, search("\D\d\d\d\d$", rawDate)
+                                search = re.search(r"\D\d\d\d\d$", rawDate)
                                 if search:
                                     year = search.group()
                                 else:
@@ -5352,17 +5353,17 @@ class S3QuestionTypeDateWidget(S3QuestionTypeAbstractWidget):
         """
             This will validate the data passed in to the widget
         """
-        result = S3QuestionTypeAbstractWidget.validate(self, valueList)
-        if result != ANSWER_VALID:
+        result = S3QuestionTypeAbstractWidget.validate(self, valueList, qstn_id)
+        if result != self.ANSWER_VALID:
             return result
         #length = self.get("length", 10)
         format = self.get("format")
         data = value(valueList, 0)
         if format != None:
             try:
-                self.formattedValue(data, format)
+                self.formattedAnswer(data, format)
                 return self.ANSWER_VALID
-            except exceptions.ValueError:
+            except ValueError:
                 return self.ANSWER_INVALID
 
         return self.ANSWER_VALID
@@ -5809,9 +5810,9 @@ class S3QuestionTypeLocationWidget(S3QuestionTypeAbstractWidget):
         data = value(valueList, 0)
         if format != None:
             try:
-                self.formattedValue(data, format)
+                self.formattedAnswer(data, format)
                 return self.ANSWER_VALID
-            except exceptions.ValueError:
+            except ValueError:
                 return self.ANSWER_INVALID
 
         return self.ANSWER_VALID
@@ -6602,11 +6603,11 @@ class S3AbstractAnalysis():
     # -------------------------------------------------------------------------
     def drawChart(self,
                   series_id,
-                  output=None,
-                  data=None,
-                  label=None,
-                  xLabel=None,
-                  yLabel=None):
+                  output = None,
+                  data = None,
+                  label = None,
+                  xLabel = None,
+                  yLabel = None):
         """
             This function will draw the chart using the answer set.
 
@@ -6617,9 +6618,9 @@ class S3AbstractAnalysis():
         """
 
         msg = "Programming Error: No chart for %sWidget" % self.type
-        output = StringIO()
-        output.write(msg)
-        current.response.body = output
+        #output = BytesIO()
+        #output.write(msg)
+        current.response.body = msg
 
     # -------------------------------------------------------------------------
     def summary(self):

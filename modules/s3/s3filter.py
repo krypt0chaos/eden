@@ -2,7 +2,7 @@
 
 """ Framework for filtered REST requests
 
-    @copyright: 2013-2019 (c) Sahana Software Foundation
+    @copyright: 2013-2020 (c) Sahana Software Foundation
     @license: MIT
 
     @requires: U{B{I{gluon}} <http://web2py.com>}
@@ -40,6 +40,7 @@ __all__ = ("S3FilterWidget",
            "S3SliderFilter",
            "S3TextFilter",
            "S3NotEmptyFilter",
+           "S3EmptyFilter",
            "S3FilterForm",
            "S3Filter",
            "S3FilterString",
@@ -54,11 +55,12 @@ import re
 from collections import OrderedDict
 
 from gluon import current, URL, A, DIV, FORM, INPUT, LABEL, OPTION, SELECT, \
-                  SPAN, TABLE, TAG, TBODY, IS_EMPTY_OR, IS_FLOAT_IN_RANGE, \
-                  IS_INT_IN_RANGE, IS_IN_SET
+                  SPAN, TABLE, TAG, TBODY, \
+                  IS_IN_SET
 from gluon.storage import Storage
 from gluon.tools import callback
 
+from s3compat import INTEGER_TYPES, PY2, basestring, long, unicodeT
 from s3dal import Field
 from .s3datetime import s3_decode_iso_datetime, S3DateTime
 from .s3query import FS, S3ResourceField, S3ResourceQuery, S3URLQuery
@@ -143,10 +145,11 @@ class S3FilterWidget(object):
 
         if type(variable) is list:
             variable = "&".join(variable)
-        return INPUT(_type="hidden",
-                     _id="%s-data" % self.attr["_id"],
-                     _class="filter-widget-data %s-data" % self._class,
-                     _value=variable)
+        return INPUT(_type = "hidden",
+                     _id = "%s-data" % self.attr["_id"],
+                     _class = "filter-widget-data %s-data" % self._class,
+                     _value = variable,
+                     )
 
     # -------------------------------------------------------------------------
     # Helper methods
@@ -173,7 +176,7 @@ class S3FilterWidget(object):
 
         attributes = Storage()
         options = Storage()
-        for k, v in attr.iteritems():
+        for k, v in attr.items():
             if k[0] == "_":
                 attributes[k] = v
             else:
@@ -499,10 +502,11 @@ class S3RangeFilter(S3FilterWidget):
 
         for o, v in zip(operators, variables):
             elements.append(
-                INPUT(_type="hidden",
-                      _id="%s-%s-data" % (widget_id, o),
-                      _class="filter-widget-data %s-data" % self._class,
-                      _value=v))
+                INPUT(_type = "hidden",
+                      _id = "%s-%s-data" % (widget_id, o),
+                      _class = "filter-widget-data %s-data" % self._class,
+                      _value = v,
+                      ))
 
         return elements
 
@@ -541,7 +545,7 @@ class S3RangeFilter(S3FilterWidget):
         rfilter = resource.rfilter
         if rfilter:
             join = rfilter.get_joins()
-            left = rfilter.get_joins(left=True)
+            left = rfilter.get_joins(left = True)
         else:
             join = left = None
 
@@ -550,8 +554,8 @@ class S3RangeFilter(S3FilterWidget):
 
         row = current.db(query).select(field.min(),
                                        field.max(),
-                                       join=join,
-                                       left=left,
+                                       join = join,
+                                       left = left,
                                        ).first()
 
         minimum = row[field.min()]
@@ -591,10 +595,11 @@ class S3RangeFilter(S3FilterWidget):
 
             input_id = "%s-%s" % (_id, operator)
 
-            input_box = INPUT(_name=input_id,
-                              _id=input_id,
-                              _type="text",
-                              _class=input_class)
+            input_box = INPUT(_name = input_id,
+                              _id = input_id,
+                              _type = "text",
+                              _class = input_class,
+                              )
 
             variable = _variable(selector, operator)
 
@@ -730,6 +735,11 @@ class S3DateFilter(S3RangeFilter):
         @keyword fieldtype: explicit field type "date" or "datetime" to
                             use for context or virtual fields
         @keyword hide_time: don't show time selector
+
+        WIP: Incomplete:
+        @keyword filterby: field to filter records included by
+        @keyword filter_opts: options to filter records included by
+        @keyword negative: To Exclude matching records rather than Including them, provide the selector for the "selector=None"
     """
 
     _class = "date-filter"
@@ -737,10 +747,67 @@ class S3DateFilter(S3RangeFilter):
     # Class for visible input boxes.
     _input_class = "%s-%s" % (_class, "input")
 
-    operator = ["ge", "le"]
+    #operator = ["ge", "le"]
 
     # Untranslated labels for individual input boxes.
     input_labels = {"ge": "From", "le": "To"}
+
+    # -------------------------------------------------------------------------
+    def __call__(self, resource, get_vars=None, alias=None):
+        """
+            Entry point for the form builder
+            - subclassed from S3FilterWidget to handle 'available' selector
+
+            @param resource: the S3Resource to render the widget for
+            @param get_vars: the GET vars (URL query vars) to prepopulate
+                             the widget
+            @param alias: the resource alias to use
+        """
+
+        self.alias = alias
+
+        # Initialize the widget attributes
+        self._attr(resource)
+
+        # Extract the URL values to populate the widget
+        variable = self.variable(resource, get_vars)
+
+        defaults = {}
+        for k, v in self.values.items():
+            if k.startswith("available"):
+                selector = k
+            else:
+                selector = self._prefix(k)
+            defaults[selector] = v
+
+        if type(variable) is list:
+            values = Storage()
+            for k in variable:
+                if k in defaults:
+                    values[k] = defaults[k]
+                else:
+                    values[k] = self._values(get_vars, k)
+        else:
+            if variable in defaults:
+                values = defaults[variable]
+            else:
+                values = self._values(get_vars, variable)
+
+        # Construct and populate the widget
+        widget = self.widget(resource, values)
+
+        # Recompute variable in case operator got changed in widget()
+        if self.alternatives:
+            variable = self._variable(self.selector, self.operator)
+
+        # Construct the hidden data element
+        data = self.data_element(variable)
+
+        if type(data) is list:
+            data.append(widget)
+        else:
+            data = [data, widget]
+        return TAG[""](*data)
 
     # -------------------------------------------------------------------------
     def data_element(self, variables):
@@ -776,7 +843,8 @@ class S3DateFilter(S3RangeFilter):
                 INPUT(_type = "hidden",
                       _id = "%s-%s-data" % (_id, operator),
                       _class = "filter-widget-data %s-data" % self._class,
-                      _value = variable))
+                      _value = variable,
+                      ))
 
         return elements
 
@@ -815,6 +883,8 @@ class S3DateFilter(S3RangeFilter):
 
             @param resource: the S3Resource
             @param as_str: return date as ISO-formatted string not raw DateTime
+
+            @ToDo: Update for negative
         """
 
         # Find only values linked to records the user is
@@ -822,12 +892,23 @@ class S3DateFilter(S3RangeFilter):
         # (= use the resource query)
         query = resource.get_query()
 
+        filterby = self.opts.get("filterby")
+        if filterby:
+            filter_opts = self.opts.get("filter_opts")
+            if filter_opts:
+                if not isinstance(filter_opts, (list, tuple)):
+                    query &= (FS(filterby) == filter_opts)
+                elif len(filter_opts) == 1:
+                    query &= (FS(filterby) == filter_opts[0])
+                else:
+                    query &= (FS(filterby).belongs(filter_opts))
+
         # Must include rfilter joins when using the resource
         # query (both inner and left):
         rfilter = resource.rfilter
         if rfilter:
             join = rfilter.get_joins()
-            left = rfilter.get_joins(left=True)
+            left = rfilter.get_joins(left = True)
         else:
             join = left = None
 
@@ -842,6 +923,7 @@ class S3DateFilter(S3RangeFilter):
             # http://stackoverflow.com/questions/21286215/how-can-i-include-null-values-in-a-min-or-max
             # http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#Default-values-with-coalesce-and-coalesce_zero
             # or can simply do a 2nd query to check for NULLs
+            # client-side JS does an OR end_field is None
             start_field = S3ResourceField(resource, fields[0]).field
             end_field = S3ResourceField(resource, fields[1]).field
             row = current.db(query).select(start_field.min(),
@@ -920,6 +1002,7 @@ class S3DateFilter(S3RangeFilter):
         """
 
         attr = self.attr
+        opts_get = self.opts.get
 
         # CSS class and element ID
         _class = self._class
@@ -929,13 +1012,7 @@ class S3DateFilter(S3RangeFilter):
             _class = _class
         _id = attr["_id"]
 
-        # Classes and labels for the individual date/time inputs
-        T = current.T
-        input_class = self._input_class
-        input_labels = self.input_labels
-
         # Picker options
-        opts_get = self.opts.get
         clear_text = opts_get("clear_text", None)
         hide_time = opts_get("hide_time", False)
 
@@ -956,8 +1033,36 @@ class S3DateFilter(S3RangeFilter):
             minimum = maximum = None
 
         # Generate the input elements
-        filter_widget = DIV(_id=_id, _class=_class)
+        filter_widget = DIV(_id = _id,
+                            _class = _class,
+                            )
         append = filter_widget.append
+
+        # Classes and labels for the individual date/time inputs
+        T = current.T
+        input_class = self._input_class
+        negative = opts_get("negative", None)
+        if negative is not None:
+            input_class = "%s %s" % (input_class, "negative")
+            append(INPUT(_id = "%s-negative" % _id,
+                         _type = "hidden",
+                         _value = negative,
+                         ))
+        input_labels = self.input_labels
+
+        filterby = opts_get("filterby", None)
+        if filterby is not None:
+            filter_opts = opts_get("filter_opts", None)
+            if filter_opts is not None:
+                append(INPUT(_id = "%s-filterby" % _id,
+                             _type = "hidden",
+                             _value = filterby,
+                             ))
+                append(INPUT(_id = "%s-filter_opts" % _id,
+                             _type = "hidden",
+                             # @ToDo: Each option needs to be wrapped in ""
+                             _value = ",".join(filter_opts),
+                             ))
 
         if slider:
             # Load Moment & D3/NVD3 into Browser
@@ -1005,7 +1110,8 @@ class S3DateFilter(S3RangeFilter):
                 range_picker["_data-fmt"] = "MMM D YYYY HH:mm"
                 #range_picker["_data-fmt"] = "LLL" # Locale-aware version
             append(DIV(range_picker,
-                       _class="range-picker-wrapper"))
+                       _class = "range-picker-wrapper",
+                       ))
 
         get_variable = self._variable
 
@@ -1063,6 +1169,11 @@ class S3DateFilter(S3RangeFilter):
             timepicker = False if ftype == "date" or hide_time else True
             if timepicker and "datetimepicker" not in input_class:
                 input_class += " datetimepicker"
+            if ftype != "date" and hide_time:
+                # Indicate that this filter is for a datetime field but
+                # with a hidden time selector (so it shall add a suitable
+                # time fragment automatically)
+                input_class += " hide-time"
 
             for operator in operators:
 
@@ -1122,9 +1233,9 @@ class S3DateFilter(S3RangeFilter):
 
                 if operator in input_labels:
                     label = DIV(LABEL("%s:" % T(input_labels[operator]),
-                                      _for=input_id,
+                                      _for = input_id,
                                       ),
-                                _class="range-filter-label",
+                                _class = "range-filter-label",
                                 )
                 else:
                     label = ""
@@ -1132,9 +1243,9 @@ class S3DateFilter(S3RangeFilter):
                 # Append label and widget
                 append(DIV(label,
                            DIV(picker,
-                               _class="range-filter-widget",
+                               _class = "range-filter-widget",
                                ),
-                           _class="range-filter-field",
+                           _class = "range-filter-field",
                            ))
 
         return filter_widget
@@ -1151,13 +1262,66 @@ class S3SliderFilter(S3RangeFilter):
         @keyword label: label for the widget
         @keyword comment: comment for the widget
         @keyword hidden: render widget initially hidden (="advanced" option)
-
-        FIXME broken (multiple issues)
     """
 
-    _class = "slider-filter"
+    # -------------------------------------------------------------------------
+    def ajax_options(self, resource):
+        """
+            Method to Ajax-retrieve the current options of this widget
 
-    operator = ["ge", "le"]
+            @param resource: the S3Resource
+        """
+
+        minimum, maximum = self._options(resource)[:2]
+
+        attr = self._attr(resource)
+        options = {attr["_id"]: {"min": minimum,
+                                 "max": maximum,
+                                 }}
+        return options
+
+    # -------------------------------------------------------------------------
+    def _options(self, resource):
+        """
+            Helper function to retrieve the current options for this
+            filter widget
+
+            @param resource: the S3Resource
+        """
+
+        db = current.db
+
+        # Find only values linked to records the user is
+        # permitted to read, and apply any resource filters
+        # (= use the resource query)
+        query = resource.get_query()
+
+        # Must include rfilter joins when using the resource
+        # query (both inner and left):
+        rfilter = resource.rfilter
+        if rfilter:
+            join = rfilter.get_joins()
+            left = rfilter.get_joins(left = True)
+        else:
+            join = left = None
+
+        rfield = S3ResourceField(resource, self.field)
+        field = rfield.field
+
+        row = db(query).select(field.min(),
+                               field.max(),
+                               join = join,
+                               left = left,
+                               ).first()
+
+        minimum = row[field.min()]
+        maximum = row[field.max()]
+
+        empty = db(query & (field == None)).select(resource.table.id,
+                                                   limitby = (0, 1)
+                                                   ).first()
+
+        return minimum, maximum, empty
 
     # -------------------------------------------------------------------------
     def widget(self, resource, values):
@@ -1168,90 +1332,124 @@ class S3SliderFilter(S3RangeFilter):
             @param values: the search values from the URL query
         """
 
-        attr = self.attr
+        T = current.T
 
-        # CSS class and element ID
+        attr = self.attr
         _class = self._class
         if "_class" in attr and attr["_class"]:
             _class = "%s %s" % (attr["_class"], _class)
         else:
             _class = _class
         attr["_class"] = _class
+
         _id = attr["_id"]
-
-        # Determine the field type
-        if resource:
-            rfield = S3ResourceField(resource, self.field)
-            field = rfield.field
-        else:
-            field = None
-        if not field:
-            # Unresolvable selector
-            return ""
-
-        # Options
-        step = self.opts.get("step", 1)
-        _type = self.opts.get("type", "int")
-
-        # Generate the input elements
-        field = str(field)
-        fieldname = field.replace(".", "_")
-        selector = self.selector
+        field = self.field
+        input_class = self._input_class
+        input_labels = self.input_labels
         _variable = self._variable
+        selector = self.selector
+
+        input_elements = DIV()
+        ie_append = input_elements.append
+
+        slider_id = "%s_slider" % field
+        slider = DIV(_id = slider_id)
+        ie_append(slider)
+        input_ids = []
+        _values = []
+
+        opts_get = self.opts.get
+        step = opts_get("step", 1)
+        _type = opts_get("type", "int")
+
+        # Set min_value & max_value
+        #min_value = opts_get("minimum", None)
+        #max_value = opts_get("maximum", None)
+        #if min_value is None or max_value is None:
+        # Introspect from the data
+        min_value, max_value, empty = self._options(resource)
+        if min_value is None:
+            #min_value = "null"
+            min_value = 0
+        elif empty is not None and \
+             min_value > 0:
+            # Treat None as 0
+            min_value = 0
+        if max_value is None:
+            #max_value = "null"
+            max_value = 0
+
         for operator in self.operator:
+
             input_id = "%s-%s" % (_id, operator)
-            input = INPUT(_name = input_id,
-                          _disabled = True,
-                          _id = input_id,
-                          _style = "border:0",
-                          )
+            input_ids.append(input_id)
+
+            input_box = INPUT(_name = input_id,
+                              _id = input_id,
+                              _type = "text",
+                              _class = input_class,
+                              )
+
+            variable = _variable(selector, operator)
+
             # Populate with the value, if given
             # if user has not set any of the limits, we get [] in values.
-            variable = _variable(selector, operator)
             value = values.get(variable, None)
             if value not in [None, []]:
                 if type(value) is list:
                     value = value[0]
-                input["_value"] = value
-                input["value"] = value
+                input_box["_value"] = value
+                input_box["value"] = value
+                _values.append(value)
+            else:
+                if operator == "ge":
+                    _values.append(min_value)
+                else:
+                    _values.append(max_value)
 
-        slider = DIV(_id="%s_slider" % fieldname, **attributes)
+            ie_append(DIV(DIV(LABEL("%s:" % T(input_labels[operator]),
+                                    _for = input_id,
+                                    ),
+                              _class = "range-filter-label",
+                              ),
+                          DIV(input_box,
+                              _class = "range-filter-widget",
+                              ),
+                          _class = "range-filter-field",
+                          ))
 
         s3 = current.response.s3
 
-        validator = field.requires
-        if isinstance(validator, IS_EMPTY_OR):
-            validator = validator.other
-        _min = validator.minimum
-        # Max Value depends upon validator type
-        if isinstance(validator, IS_INT_IN_RANGE):
-            _max = validator.maximum - 1
-        elif isinstance(validator, IS_FLOAT_IN_RANGE):
-            _max = validator.maximum
-
-        if values is None:
-            # JSONify
-            value = "null"
-            script = '''i18n.slider_help="%s"''' % \
-                current.T("Click on the slider to choose a value")
-            s3.js_global.append(script)
+        script = '''i18n.slider_help="%s"''' % \
+            current.T("Click on the slider to choose a value")
+        s3.js_global.append(script)
 
         if _type == "int":
-            script = '''S3.range_slider('%s',%i,%i,%i,%s)''' % (fieldname,
-                                                                _min,
-                                                                _max,
-                                                                step,
-                                                                values)
+            script = '''S3.range_slider('%s','%s','%s',%i,%i,%i,[%i,%i])''' % \
+                        (slider_id,
+                         input_ids[0],
+                         input_ids[1],
+                         min_value,
+                         max_value,
+                         step,
+                         _values[0],
+                         _values[1],
+                         )
         else:
             # Float
-            script = '''S3.range_slider('%s',%f,%f,%f,%s)''' % (fieldname,
-                                                                _min,
-                                                                _max,
-                                                                step,
-                                                                values)
+            script = '''S3.range_slider('%s','%s','%s',%f,%f,%f,[%i,%i])''' % \
+                        (slider_id,
+                         input_ids[0],
+                         input_ids[1],
+                         min_value,
+                         max_value,
+                         step,
+                         _values[0],
+                         _values[1],
+                         )
         s3.jquery_ready.append(script)
 
-        return TAG[""](input1, input2, slider)
+        return input_elements
 
 # =============================================================================
 class S3LocationFilter(S3FilterWidget):
@@ -1407,15 +1605,15 @@ class S3LocationFilter(S3FilterWidget):
                                         header = header_opt,
                                         selectedList = opts.get("selectedList", 3),
                                         noneSelectedText = T("Select %(location)s") % \
-                                                             dict(location=levels[level]["label"]))
+                                                             {"location": levels[level]["label"]})
                 if first:
                     # Visible Multiselect Widget added to the page
                     attr["_class"] = _class
                     options = levels[level]["options"]
-                    dummy_field = Storage(name=name,
-                                          type=ftype,
-                                          requires=IS_IN_SET(options,
-                                                             multiple=True))
+                    dummy_field = Storage(name = name,
+                                          type = ftype,
+                                          requires = IS_IN_SET(options,
+                                                               multiple=True))
                     widget = w(dummy_field, _values, **attr)
                     first = False
                 else:
@@ -1428,10 +1626,10 @@ class S3LocationFilter(S3FilterWidget):
                     jquery_ready = s3.jquery_ready
                     # Build the widget with the MultiSelect activation script
                     s3.jquery_ready = []
-                    dummy_field = Storage(name=name,
-                                          type=ftype,
-                                          requires=IS_IN_SET([],
-                                                             multiple=True))
+                    dummy_field = Storage(name = name,
+                                          type = ftype,
+                                          requires = IS_IN_SET([],
+                                                               multiple=True))
                     widget = w(dummy_field, _values, **attr)
                     # Extract the MultiSelect activation script
                     script = s3.jquery_ready[0]
@@ -1462,10 +1660,11 @@ class S3LocationFilter(S3FilterWidget):
         oappend = output.append
         i = 0
         for level in self.levels:
-            widget = INPUT(_type="hidden",
-                           _id="%s-%s-data" % (self.attr["_id"], level),
-                           _class="filter-widget-data %s-data" % self._class,
-                           _value=variable[i])
+            widget = INPUT(_type = "hidden",
+                           _id = "%s-%s-data" % (self.attr["_id"], level),
+                           _class = "filter-widget-data %s-data" % self._class,
+                           _value = variable[i],
+                           )
             oappend(widget)
             i += 1
 
@@ -1615,7 +1814,7 @@ class S3LocationFilter(S3FilterWidget):
 
             # Add to result rows
             if lx:
-                rows = rows & lx if rows else lx
+                rows = (rows | lx) if rows else lx
 
             # Pick subset for parent lookup
             if lx and location_ids:
@@ -1849,10 +2048,10 @@ class S3LocationFilter(S3FilterWidget):
                 # Filter out old Locations
                 # @ToDo: Allow override
                 resource2.add_filter(gtable.end_date == None)
-                _rows = resource2.select(fields=fields,
-                                         limit=None,
-                                         virtual=False,
-                                         as_rows=True)
+                _rows = resource2.select(fields = fields,
+                                         limit = None,
+                                         virtual = False,
+                                         as_rows = True)
                 if rows2:
                     rows2 &= _rows
                 else:
@@ -1901,7 +2100,7 @@ class S3LocationFilter(S3FilterWidget):
                     (ntable.language == current.session.s3.language)
             nrows = current.db(query).select(gtable.name,
                                              ntable.name_l10n,
-                                             limitby=(0, len(ids)),
+                                             limitby = (0, len(ids)),
                                              )
             for row in nrows:
                 name_l10n[row["gis_location.name"]] = row["gis_location_name.name_l10n"]
@@ -1917,7 +2116,7 @@ class S3LocationFilter(S3FilterWidget):
             # Sort the options dicts
             for level in levels:
                 options = levels[level]["options"]
-                options = OrderedDict(sorted(options.iteritems()))
+                options = OrderedDict(sorted(options.items()))
         else:
             # Sort the options lists
             for level in levels:
@@ -2093,7 +2292,7 @@ class S3MapFilter(S3FilterWidget):
                                     height = opts_get("height", settings.get_gis_map_height()),
                                     width = opts_get("width", settings.get_gis_map_width()),
                                     collapsed = True,
-                                    callback='''S3.search.s3map('%s')''' % map_id,
+                                    callback = '''S3.search.s3map('%s')''' % map_id,
                                     feature_resources = feature_resources,
                                     toolbar = toolbar,
                                     add_polygon = True,
@@ -2262,15 +2461,16 @@ class S3OptionsFilter(S3FilterWidget):
         attr["_class"] = " ".join(set(classes)) if classes else None
 
         # Render the widget
-        dummy_field = Storage(name=name,
-                              type=ftype,
-                              requires=IS_IN_SET(options, multiple=True))
+        dummy_field = Storage(name = name,
+                              type = ftype,
+                              requires = IS_IN_SET(options, multiple=True),
+                              )
         widget = w(dummy_field, values, **attr)
 
         return TAG[""](any_all,
                        widget,
                        SPAN(noopt,
-                            _class="no-options-available%s" % hide_noopt,
+                            _class = "no-options-available%s" % hide_noopt,
                             ),
                        )
 
@@ -2357,7 +2557,7 @@ class S3OptionsFilter(S3FilterWidget):
             options = opts.options
             if callable(options):
                 options = options()
-            opt_keys = options.keys()
+            opt_keys = list(options.keys())
 
         elif resource:
             # Determine the options from the field type
@@ -2489,7 +2689,7 @@ class S3OptionsFilter(S3FilterWidget):
                 else:
                     val = _val
                 if val not in opt_keys and \
-                   (not isinstance(val, (int, long)) or not str(val) in opt_keys):
+                   (not isinstance(val, INTEGER_TYPES) or not str(val) in opt_keys):
                     opt_keys.append(val)
 
         # No options?
@@ -2513,7 +2713,7 @@ class S3OptionsFilter(S3FilterWidget):
                             for opt, label in options.items()
                             ]
             else:
-                opt_list = options.items()
+                opt_list = list(options.items())
 
 
         elif callable(represent):
@@ -2530,19 +2730,22 @@ class S3OptionsFilter(S3FilterWidget):
                     del opt_dict[None]
                 if "" in opt_keys:
                     opt_dict[""] = EMPTY
-                opt_list = opt_dict.items()
+                opt_list = list(opt_dict.items())
 
             else:
                 # Simple represent function
-                args = {"show_link": False} \
-                       if "show_link" in represent.func_code.co_varnames else {}
+                if PY2:
+                    varnames = represent.func_code.co_varnames
+                else:
+                    varnames = represent.__code__.co_varnames
+                args = {"show_link": False} if "show_link" in varnames else {}
                 if multiple:
                     repr_opt = lambda opt: opt in (None, "") and (opt, EMPTY) or \
                                            (opt, represent([opt], **args))
                 else:
                     repr_opt = lambda opt: opt in (None, "") and (opt, EMPTY) or \
                                            (opt, represent(opt, **args))
-                opt_list = map(repr_opt, opt_keys)
+                opt_list = [repr_opt(k) for k in opt_keys]
 
         elif isinstance(represent, str) and ftype[:9] == "reference":
             # Represent is a string template to be fed from the
@@ -2675,7 +2878,7 @@ class S3HierarchyFilter(S3FilterWidget):
         if not isinstance(values, (list, tuple, set)):
             values = [values]
         for v in values:
-            if isinstance(v, (int, long)) or str(v).isdigit():
+            if isinstance(v, INTEGER_TYPES) or str(v).isdigit():
                 append(v)
 
         # Resolve the field selector
@@ -2751,7 +2954,7 @@ class S3HierarchyFilter(S3FilterWidget):
         # Detect and resolve __typeof queries
         resolve = S3ResourceQuery._resolve_hierarchy
         selector = resource.prefix_selector(selector)
-        for key, value in get_vars.items():
+        for key, value in list(get_vars.items()):
 
             if key.startswith(selector):
                 selectors, op = S3URLQuery.parse_expression(key)[:2]
@@ -2807,6 +3010,39 @@ class S3NotEmptyFilter(S3FilterWidget):
         return INPUT(**attr)
 
 # =============================================================================
+class S3EmptyFilter(S3FilterWidget):
+    """
+        Filter to check for No Component records of a type
+        - e.g. Filter out all those people who have a certain qualification already
+        - use with a Custom Filtered Component "custom.id"
+    """
+
+    _class = "value-filter"
+
+    operator = "eq"
+
+    # -------------------------------------------------------------------------
+    def widget(self, resource, values):
+        """
+            Render this widget as HTML helper object(s)
+
+            @param resource: the resource
+            @param values: the search values from the URL query
+        """
+
+        attr = self.attr
+        _class = self._class
+        if "_class" in attr and attr["_class"]:
+            _class = "%s %s" % (attr["_class"], _class)
+        else:
+            _class = _class
+        attr["_class"] = _class
+        attr["_type"] = "checkbox"
+        attr["value"] = True if None in values else False
+
+        return INPUT(**attr)
+
+# =============================================================================
 class S3FilterForm(object):
     """ Helper class to construct and render a filter form for a resource """
 
@@ -2822,7 +3058,7 @@ class S3FilterForm(object):
 
         attributes = Storage()
         options = Storage()
-        for k, v in attr.iteritems():
+        for k, v in attr.items():
             if k[0] == "_":
                 attributes[k] = v
             else:
@@ -2899,9 +3135,10 @@ class S3FilterForm(object):
                 label = submit
 
             # Submit button
-            submit_button = INPUT(_type="button",
-                                  _value=label,
-                                  _class="filter-submit")
+            submit_button = INPUT(_type = "button",
+                                  _value = label,
+                                  _class = "filter-submit",
+                                  )
             if _class:
                 submit_button.add_class(_class)
 
@@ -2913,16 +3150,19 @@ class S3FilterForm(object):
 
             # Submit row elements
             submit = TAG[""](submit_button,
-                             INPUT(_type="hidden",
-                                   _class="filter-ajax-url",
-                                   _value=ajax_url),
-                             INPUT(_type="hidden",
-                                   _class="filter-submit-url",
-                                   _value=submit_url))
+                             INPUT(_type = "hidden",
+                                   _class = "filter-ajax-url",
+                                   _value = ajax_url,
+                                   ),
+                             INPUT(_type = "hidden",
+                                   _class = "filter-submit-url",
+                                   _value = submit_url,
+                                   ))
             if ajax and target:
-                submit.append(INPUT(_type="hidden",
-                                    _class="filter-submit-target",
-                                    _value=target))
+                submit.append(INPUT(_type = "hidden",
+                                    _class = "filter-submit-target",
+                                    _value = target,
+                                    ))
 
             # Append submit row
             submit_row = formstyle(None, "", submit, "")
@@ -2977,9 +3217,9 @@ class S3FilterForm(object):
             formstyle = current.deployment_settings.get_ui_filter_formstyle()
 
         rows = self._render_widgets(resource,
-                                    get_vars=get_vars,
-                                    alias=alias,
-                                    formstyle=formstyle)
+                                    get_vars = get_vars,
+                                    alias = alias,
+                                    formstyle = formstyle)
 
         controls = self._render_controls(resource)
         if controls:
@@ -3030,10 +3270,10 @@ class S3FilterForm(object):
                               data = {"on": label,
                                       "off": label_off,
                                       },
-                              _class="filter-advanced-label",
+                              _class = "filter-advanced-label",
                               ),
                          ICON("down"),
-                         ICON("up", _style="display:none"),
+                         ICON("up", _style = "display:none"),
                          _class=_class
                          )
             controls.append(advanced)
@@ -3115,8 +3355,8 @@ class S3FilterForm(object):
             rappend(formrow)
         if advanced:
             if resource:
-                self.opts["advanced"] = resource.get_config(
-                                            "filter_advanced", True)
+                self.opts["advanced"] = \
+                    resource.get_config("filter_advanced", True)
             else:
                 self.opts["advanced"] = True
         return rows
@@ -3152,12 +3392,14 @@ class S3FilterForm(object):
         rows = current.db(query).select(table._id,
                                         table.title,
                                         table.query,
-                                        orderby=table.title)
+                                        orderby = table.title
+                                        )
 
         options = [OPTION(SELECT_FILTER,
-                          _value="",
-                          _class="filter-manager-prompt",
-                          _disabled="disabled")]
+                          _value = "",
+                          _class = "filter-manager-prompt",
+                          _disabled = "disabled",
+                          )]
         add_option = options.append
         filters = {}
         for row in rows:
@@ -3169,9 +3411,11 @@ class S3FilterForm(object):
             filters[filter_id] = query
         widget_id = "%s-fm" % form_id
         widget = DIV(SELECT(options,
-                            _id=widget_id,
-                            _class="filter-manager-widget"),
-                     _class="filter-manager-container")
+                            _id = widget_id,
+                            _class = "filter-manager-widget",
+                            ),
+                     _class = "filter-manager-container",
+                     )
 
         # JSON-serializable translator
         T = current.T
@@ -3242,7 +3486,8 @@ class S3FilterForm(object):
         """
             Add default filters to resource, to be called a multi-record
             view with a filter form is rendered the first time and before
-            the view elements get processed
+            the view elements get processed; can be overridden in request
+            URL with ?default_filters=0
 
             @param request: the request
             @param resource: the resource
@@ -3250,12 +3495,15 @@ class S3FilterForm(object):
             @return: dict with default filters (URL vars)
         """
 
-        s3 = current.response.s3
+        default_filters = {}
 
         get_vars = request.get_vars
-        tablename = resource.tablename
+        if get_vars.get("default_filters") == "0":
+            # Skip default filters (e.g. link in report)
+            return default_filters
 
-        default_filters = {}
+        s3 = current.response.s3
+        tablename = resource.tablename
 
         # Do we have filter defaults for this resource?
         filter_defaults = s3
@@ -3334,7 +3582,7 @@ class S3FilterForm(object):
                         default = applicable_defaults[operator]
                     else:
                         continue
-                elif operator in (None, "belongs", "eq", "ne"):
+                elif operator in (None, "belongs", "eq", "ne", "like"):
                     default = applicable_defaults
                 else:
                     continue
@@ -3484,19 +3732,22 @@ class S3Filter(S3Method):
         record = None
         record_id = data.get("id")
         if record_id:
-            query = (table.id == record_id) & (table.pe_id == pe_id)
-            record = db(query).select(table.id, limitby=(0, 1)).first()
+            query = (table.id == record_id) & \
+                    (table.pe_id == pe_id)
+            record = db(query).select(table.id,
+                                      limitby = (0, 1)
+                                      ).first()
         if not record:
             r.error(404, current.ERROR.BAD_RECORD)
 
-        resource = s3db.resource("pr_filter", id=record_id)
-        success = resource.delete(format=r.representation)
+        resource = s3db.resource("pr_filter", id = record_id)
+        success = resource.delete(format = r.representation)
 
         if not success:
             r.error(400, resource.error)
 
         current.response.headers["Content-Type"] = "application/json"
-        return current.xml.json_message(deleted=record_id)
+        return current.xml.json_message(deleted = record_id)
 
     # -------------------------------------------------------------------------
     def _save(self, r, **attr):
@@ -3533,8 +3784,11 @@ class S3Filter(S3Method):
         record_id = data.get("id")
         record = None
         if record_id:
-            query = (table.id == record_id) & (table.pe_id == pe_id)
-            record = db(query).select(table.id, limitby=(0, 1)).first()
+            query = (table.id == record_id) & \
+                    (table.pe_id == pe_id)
+            record = db(query).select(table.id,
+                                      limitby = (0, 1)
+                                      ).first()
             if not record:
                 r.error(404, current.ERROR.BAD_RECORD)
 
@@ -3616,7 +3870,7 @@ class S3Filter(S3Method):
         else:
             pe_id = None
         if not pe_id:
-            r.unauthorized()
+            r.unauthorised()
 
         # Build query
         query = (table.deleted != True) & \
@@ -3639,7 +3893,8 @@ class S3Filter(S3Method):
         rows = db(query).select(table.id,
                                 table.title,
                                 table.description,
-                                table.query)
+                                table.query,
+                                )
 
         # Pack filters
         filters = []
@@ -3722,7 +3977,7 @@ class S3FilterString(object):
         render = self._render
         substrings = []
         append = substrings.append
-        for alias, subqueries in queries.iteritems():
+        for alias, subqueries in queries.items():
 
             for subquery in subqueries:
                 s = render(resource, alias, subquery, labels=labels)
@@ -3866,7 +4121,7 @@ class S3FilterString(object):
             if ftype[5:8] in ("int", "ref"):
                 ftype = long
             else:
-                ftype = unicode
+                ftype = unicodeT
         elif ftype == "id" or ftype [:9] == "reference":
             ftype = long
         elif ftype == "integer":
@@ -3882,7 +4137,7 @@ class S3FilterString(object):
         elif ftype == "boolean":
             ftype = bool
         else:
-            ftype = unicode
+            ftype = unicodeT
 
         convert = S3TypeConverter.convert
         if type(value) is list:

@@ -9,10 +9,11 @@
 def index():
     """ Module's Home Page """
 
-    module_name = settings.modules["admin"].name_nice
+    module_name = settings.modules["admin"].get("name_nice")
     response.title = module_name
 
-    return {"module_name": module_name}
+    return {"module_name": module_name,
+            }
 
 # =============================================================================
 @auth.s3_requires_membership(1)
@@ -58,13 +59,15 @@ def user():
     """ RESTful CRUD controller """
 
     table = auth.settings.table_user
-    sr = auth.get_system_roles()
+    s3_has_role = auth.s3_has_role
 
     # Check for ADMIN first since ADMINs have all roles
-    if s3_has_role(sr.ADMIN):
+    ADMIN = False
+    if s3_has_role("ADMIN"):
+        ADMIN = True
         pe_ids = None
 
-    elif s3_has_role(sr.ORG_ADMIN):
+    elif s3_has_role("ORG_ADMIN"):
         pe_ids = auth.get_managed_orgs()
         if pe_ids is None:
             # OrgAdmin with default realm, but user not affiliated with any org
@@ -94,7 +97,7 @@ def user():
     lappend = list_fields.append
     if len(settings.get_L10n_languages()) > 1:
         lappend("language")
-    if auth.s3_has_role("ADMIN"):
+    if ADMIN:
         if settings.get_auth_admin_sees_organisation():
             lappend("organisation_id")
     elif settings.get_auth_registration_requests_organisation():
@@ -108,13 +111,20 @@ def user():
         lappend("link_user_to")
         table.link_user_to.represent = lambda v: ", ".join([s3_str(link_user_to[opt]) for opt in v]) \
                                                  if v else current.messages["NONE"]
-    lappend((T("Registration"), "created_on"))
-    table.created_on.represent = s3base.S3DateTime.date_represent
-    lappend((T("Roles"), "membership.group_id"))
+    date_represent = s3base.S3DateTime.date_represent
+    table.created_on.represent = date_represent
+    table.timestmp.represent = date_represent
+    list_fields += [(T("Roles"), "membership.group_id"),
+                    (T("Registration"), "created_on"),
+                    (T("Last Login"), "timestmp"),
+                    ]
 
     s3db.configure("auth_user",
-                   create_next = URL(c="admin", f="user", args=["[id]", "roles"]),
-                   create_onaccept = lambda form: auth.s3_approve_user(form.vars),
+                   create_next = URL(c="admin", f="user",
+                                     args = ["[id]", "roles"],
+                                     ),
+                   create_onaccept = lambda form: \
+                                        auth.s3_approve_user(form.vars),
                    list_fields = list_fields,
                    main = "first_name",
                    #update_onaccept = lambda form: auth.s3_link_user(form.vars),
@@ -138,7 +148,8 @@ def user():
             session.error = T("Can only approve 1 record at a time!")
             redirect(URL(args=[]))
 
-        user = db(table.id == r.id).select(limitby=(0, 1)).first()
+        user = db(table.id == r.id).select(limitby = (0, 1)
+                                           ).first()
         auth.s3_approve_user(user)
 
         session.confirmation = T("User Account has been Approved")
@@ -149,7 +160,8 @@ def user():
             session.error = T("Can only update 1 record at a time!")
             redirect(URL(args=[]))
 
-        user = db(table.id == r.id).select(limitby=(0, 1)).first()
+        user = db(table.id == r.id).select(limitby = (0, 1)
+                                           ).first()
         auth.s3_link_user(user)
 
         session.confirmation = T("User has been (re)linked to Person and Human Resource record")
@@ -159,7 +171,7 @@ def user():
     set_method = s3db.set_method
     set_method("auth", "user",
                method = "roles",
-               action = s3base.S3RoleManager)
+               action = s3base.S3RoleManager)   # s3roles.py
 
     set_method("auth", "user",
                method = "disable",
@@ -200,21 +212,21 @@ def user():
             btn = A(T("Disable"),
                     _class = "action-btn",
                     _title = "Disable User",
-                    _href = URL(args=[id, "disable"])
+                    _href = URL(args = [id, "disable"])
                     )
             rheader.append(btn)
             if settings.get_auth_show_link():
                 btn = A(T("Link"),
                         _class = "action-btn",
                         _title = "Link (or refresh link) between User, Person & HR Record",
-                        _href = URL(args=[id, "link"])
+                        _href = URL(args = [id, "link"])
                         )
                 rheader.append(btn)
         #elif registration_key == "pending":
         #    btn = A(T("Approve"),
         #            _class = "action-btn",
         #            _title = "Approve User",
-        #            _href = URL(args=[id, "approve"])
+        #            _href = URL(args = [id, "approve"])
         #            )
         #    rheader.append(btn)
         else:
@@ -222,7 +234,7 @@ def user():
             btn = A(T("Approve"),
                     _class = "action-btn",
                     _title = "Approve User",
-                    _href = URL(args=[id, "approve"])
+                    _href = URL(args = [id, "approve"])
                     )
             rheader.append(btn)
 
@@ -275,28 +287,32 @@ def user():
             restrict = [str(row.id) for row in rows]
             s3.actions = [{"label": s3_str(UPDATE),
                            "url": URL(c="admin", f="user",
-                                      args=["[id]", "update"]),
+                                      args = ["[id]", "update"],
+                                      ),
                            "_class": "action-btn",
                            },
                           {"label": s3_str(T("Roles")),
                            "url": URL(c="admin", f="user",
-                                      args=["[id]", "roles"]),
+                                      args = ["[id]", "roles"],
+                                      ),
                            "_class": "action-btn",
                            },
                           {"label": s3_str(T("Disable")),
-                           "url": URL(c="admin", f="user",
-                                      args=["[id]", "disable"]),
-                           "_class": "action-btn",
                            "restrict": restrict,
+                           "url": URL(c="admin", f="user",
+                                      args = ["[id]", "disable"],
+                                      ),
+                           "_class": "action-btn",
                            },
                           ]
             if settings.get_auth_show_link():
                 s3.actions.insert(1, {"label": s3_str(T("Link")),
+                                      "restrict": restrict,
                                       "url": URL(c="admin", f="user",
-                                                 args=["[id]", "link"]),
+                                                 args = ["[id]", "link"],
+                                                 ),
                                       "_class": "action-btn",
                                       "_title": s3_str(T("Link (or refresh link) between User, Person & HR Record")),
-                                      "restrict": restrict,
                                       }
                                   )
             # Only show the approve button if the user is currently pending
@@ -306,14 +322,17 @@ def user():
             rows = db(query).select(table.id)
             restrict = [str(row.id) for row in rows]
             s3.actions.append({"label": str(T("Approve")),
-                               "url": URL(c="admin", f="user", args=["[id]", "approve"]),
                                "restrict": restrict,
+                               "url": URL(c="admin", f="user",
+                                          args = ["[id]", "approve"],
+                                          ),
                                "_class": "action-btn",
                                })
             # Add some highlighting to the rows
             query = (table.registration_key.belongs(["disabled", "pending"]))
             rows = db(query).select(table.id,
-                                    table.registration_key)
+                                    table.registration_key,
+                                    )
             s3.dataTableStyleDisabled = s3.dataTableStyleWarning = [str(row.id) for row in rows if row.registration_key == "disabled"]
             s3.dataTableStyleAlert = [str(row.id) for row in rows if row.registration_key == "pending"]
 
@@ -330,18 +349,20 @@ def user():
             if not form:
                 crud_button = s3base.S3CRUD.crud_button
                 output["showadd_btn"] = DIV(crud_button(T("Create User"),
-                                                        _href=URL(args=["create"])),
+                                                        _href = URL(args = ["create"])
+                                                        ),
                                             crud_button(T("Import Users"),
-                                                        _href=URL(args=["import"])),
+                                                        _href = URL(args = ["import"])
+                                                        ),
                                             )
                 return output
             # Assume formstyle callable
             id = "auth_user_password_two__row"
             label = "%s:" % T("Verify password")
-            widget = INPUT(_name="password_two",
-                           _id="password_two",
-                           _type="password",
-                           _disabled="disabled",
+            widget = INPUT(_name = "password_two",
+                           _id = "password_two",
+                           _type = "password",
+                           _disabled = "disabled",
                            )
             comment = ""
             row = s3_formstyle(id, label, widget, comment, hidden=True)
@@ -394,7 +415,7 @@ def group():
 
     tablename = "auth_group"
 
-    if not auth.s3_has_role(ADMIN):
+    if not auth.s3_has_role("ADMIN"):
         s3db.configure(tablename,
                        deletable = False,
                        editable = False,
@@ -448,7 +469,7 @@ def organisation():
 # -----------------------------------------------------------------------------
 def user_create_onvalidation (form):
     """ Server-side check that Password confirmation field is valid """
-    if (form.request_vars.has_key("password_two") and \
+    if ("password_two" in form.request_vars and \
         form.request_vars.password != form.request_vars.password_two):
         form.errors.password = T("Password fields don't match")
     return True
@@ -460,7 +481,10 @@ def user_create_onvalidation (form):
 def processing_type():
     """ Types of Data Processing: RESTful CRUD Controller """
 
-    return s3_rest_controller("auth", "processing_type")
+    return s3_rest_controller("auth", "processing_type",
+                              csv_template = ("auth", "processing_type"),
+                              csv_stylesheet = ("auth", "processing_type.xsl"),
+                              )
 
 # -----------------------------------------------------------------------------
 @auth.s3_requires_membership(1)
@@ -517,7 +541,64 @@ def consent_option():
         return output
     s3.postp = postp
 
-    return s3_rest_controller("auth", "consent_option")
+    return s3_rest_controller("auth", "consent_option",
+                              csv_template = ("auth", "consent_option"),
+                              csv_stylesheet = ("auth", "consent_option.xsl"),
+                              )
+
+# -----------------------------------------------------------------------------
+@auth.s3_requires_membership(1)
+def consent_question():
+    """
+        Controller to request consent on data processing from
+        the currently logged-in user
+
+        - currently only for TESTING
+        - to be moved into default/user/consent once completed (WIP)
+        - can be used as standalone controller for consent renewal after expiry
+     """
+
+    person_id = auth.s3_logged_in_person()
+    if not person_id:
+        redirect(URL(c="default", f="user", args=["login"], vars={"_next": URL()}))
+
+    output = {}
+
+    widget_id = "consent_question"
+
+    consent = s3db.auth_Consent()
+    formfields = [Field("question",
+                        label = T("Consent"),
+                        widget = consent.widget,
+                        ),
+                  ]
+
+    # Generate the form and add it to the output
+    formstyle = settings.get_ui_formstyle()
+    form = SQLFORM.factory(record = None,
+                           showid = False,
+                           formstyle = formstyle,
+                           table_name = "auth_consent",
+                           #buttons = buttons,
+                           #hidden = hidden,
+                           _id = widget_id,
+                           *formfields)
+
+    # Process the form
+    formname = "consent_question/None"
+    if form.accepts(request.post_vars,
+                    current.session,
+                    formname = formname,
+                    keepvalues = False,
+                    hideerror = False,
+                    ):
+
+        consent.track(person_id, form.vars.question)
+
+    output["form"] = form
+    response.view = "create.html"
+
+    return output
 
 # =============================================================================
 @auth.s3_requires_membership(1)
@@ -532,7 +613,7 @@ def acl():
     table.group_id.requires = IS_ONE_OF(db, "auth_group.id", "%(role)s")
     table.group_id.represent = lambda opt: opt and db.auth_group[opt].role or opt
 
-    table.controller.requires = IS_EMPTY_OR(IS_IN_SET(settings.modules.keys(),
+    table.controller.requires = IS_EMPTY_OR(IS_IN_SET(set(settings.modules.keys()),
                                                       zero="ANY"))
     table.controller.represent = lambda opt: opt and \
         "%s (%s)" % (opt,
@@ -680,7 +761,7 @@ def portable():
                     files_to_remove[filename] = os.stat(os.path.join(uploadfolder, filename)).st_mtime
         sorted_files = sorted(files_to_remove.items(), key=itemgetter(1))
         for i in range(0, len(sorted_files) - 1): # 1 indicates leave one file
-            os.remove(os.path.join(uploadfolder,sorted_files[i][0]))
+            os.remove(os.path.join(uploadfolder, sorted_files[i][0]))
         web2py_source = sorted_files[len(sorted_files) - 1][0]
         web2py_source_exists = True
         session.flash = T("Web2py executable zip file found - Upload to replace the existing file")
@@ -732,18 +813,21 @@ def portable():
 def create_portable_app(web2py_source, copy_database=False, copy_uploads=False):
     """Function to create the portable app based on the parameters"""
 
-    from gluon.admin import apath
-    import shutil,tempfile,os
-    import zipfile
     import contenttype
+    import os
+    import shutil
+    import tempfile
+    import zipfile
+
+    from gluon.admin import apath
 
     cachedir = os.path.join(apath("%s" % appname, r=request), "cache")
     tempdir = tempfile.mkdtemp("", "eden-", cachedir)
     workdir = os.path.join(tempdir, "web2py")
     if copy_uploads:
-        ignore = shutil.ignore_patterns("*.db", "*.log", "*.table", "errors", "sessions", "compiled" , "cache", ".bzr", "*.pyc")
+        ignore = shutil.ignore_patterns("*.db", "*.log", "*.table", "errors", "sessions", "compiled", "cache", ".bzr", "*.pyc")
     else:
-        ignore = shutil.ignore_patterns("*.db", "*.log", "*.table", "errors", "sessions", "compiled" , "uploads", "cache", ".bzr", "*.pyc")
+        ignore = shutil.ignore_patterns("*.db", "*.log", "*.table", "errors", "sessions", "compiled", "uploads", "cache", ".bzr", "*.pyc")
 
     appdir = os.path.join(workdir, "applications", appname)
     shutil.copytree(apath("%s" % appname, r=request),\
@@ -858,12 +942,14 @@ def translate():
             from s3.s3translate import TranslateAPI, Strings
             if form.accepts(request.vars, session):
                 modlist = []
+                form_request_vars_get = form.request_vars.get
                 # If only one module is selected
-                if type(form.request_vars.module_list) == str:
-                    modlist.append(form.request_vars.module_list)
+                module_list = form_request_vars_get("module_list")
+                if isinstance(module_list, str):
+                    modlist.append(module_list)
                 # If multiple modules are selected
                 else:
-                    modlist = form.request_vars.module_list
+                    modlist = module_list
 
                 # If no module is selected
                 if modlist is None:
@@ -875,17 +961,17 @@ def translate():
                     all_template_flag = 1
                     A = TranslateAPI()
                     modlist = A.get_modules()
-                    if "core" in form.request_vars.module_list:
+                    if "core" in module_list:
                         modlist.append("core")
 
                 # Obtaining the language file from the language code
-                code = form.request_vars.new_code
+                code = form_request_vars_get("new_code")
                 if code == "":
-                    code = form.request_vars.code
+                    code = form_request_vars_get("code")
                 code += ".py"
 
                 # Obtaining the type of file to export to
-                filetype = form.request_vars.filetype
+                filetype = form_request_vars_get("filetype")
 
                 # Generate the file to download
                 X = Strings()
@@ -896,8 +982,7 @@ def translate():
             # @todo: migrate to formstyle, use regular form widgets
             A = TranslateAPI()
             # Retrieve list of active modules
-            activemodlist = settings.modules.keys()
-            modlist = activemodlist
+            modlist = list(settings.modules.keys())
             # Hiding core modules
             hidden_modules = A.core_modules
             for module in hidden_modules:
@@ -906,10 +991,10 @@ def translate():
             modlist.sort()
             modcount = len(modlist)
 
-            langlist = A.get_langcodes()
-            langlist.sort()
+            langlist = sorted(A.get_langcodes())
 
-            table = TABLE(_class="translation_module_table")
+            table = TABLE(_class = "translation_module_table",
+                          )
             table.append(BR())
 
             # Set number of columns in the form
@@ -921,14 +1006,15 @@ def translate():
             modules = settings.modules
             while num < max_rows:
                 check = "yes"
-                mod_name = modules[modlist[num]].name_nice
-                mod_name = "%s (%s)" %(mod_name, modlist[num])
+                module = modlist[num]
+                mod_name = modules[module].get("name_nice") or module
+                mod_name = "%s (%s)" % (mod_name, module)
                 row = TR(TD(num + 1),
-                         TD(INPUT(_type="checkbox",
-                                  _name="module_list",
-                                  _value=modlist[num],
+                         TD(INPUT(_type = "checkbox",
+                                  _name = "module_list",
+                                  _value = module,
                                   _checked = check,
-                                  _class="translate-select-module",
+                                  _class = "translate-select-module",
                                   )),
                          TD(mod_name),
                          )
@@ -936,14 +1022,15 @@ def translate():
                 for c in range(1, NO_OF_COLUMNS):
                     cmax_rows = num + (c * max_rows)
                     if cmax_rows < modcount:
-                        mod_name = modules[modlist[cmax_rows]].name_nice
-                        mod_name = "%s (%s)" % (mod_name, modlist[cmax_rows])
+                        module = modlist[cmax_rows]
+                        mod_name = modules[module].get("name_nice") or module
+                        mod_name = "%s (%s)" % (mod_name, module)
                         row.append(TD(cmax_rows + 1))
-                        row.append(TD(INPUT(_type="checkbox",
-                                            _name="module_list",
-                                            _value=modlist[cmax_rows],
+                        row.append(TD(INPUT(_type = "checkbox",
+                                            _name = "module_list",
+                                            _value = module,
                                             _checked = check,
-                                            _class="translate-select-module",
+                                            _class = "translate-select-module",
                                             )))
                         row.append(TD(mod_name))
                 num += 1
@@ -952,9 +1039,9 @@ def translate():
             div = DIV(table, BR())
 
             # Toogle box to select/de-select all modules
-            row = TR(TD(INPUT(_type="checkbox",
-                              _class="translate-select-all-modules",
-                              _checked=check,
+            row = TR(TD(INPUT(_type = "checkbox",
+                              _class = "translate-select-all-modules",
+                              _checked = check,
                               ),
                         ),
                      TD(T("Select all modules")),
@@ -965,16 +1052,23 @@ def translate():
             div.append(BR())
 
             # Checkbox for inclusion of core files
-            row = TR(TD(INPUT(_type="checkbox", _name="module_list",
-                              _value="core", _checked="yes")),
+            row = TR(TD(INPUT(_type = "checkbox",
+                              _name = "module_list",
+                              _value = "core",
+                              _checked = "yes",
+                              ),
+                        ),
                      TD(T("Include core files")),
                      )
             div.append(row)
             div.append(BR())
 
             # Checkbox for inclusion of templates
-            row = TR(TD(INPUT(_type="checkbox", _name="module_list",
-                              _value="all")),
+            row = TR(TD(INPUT(_type = "checkbox",
+                              _name = "module_list",
+                              _value = "all",
+                              ),
+                        ),
                      TD(T("Select all templates (All modules included)")),
                      )
             div.append(row)
@@ -982,10 +1076,18 @@ def translate():
 
             # Provide option to choose export format
             row = TR(TD("%s:" % T("Export as")),
-                     TD(INPUT(_type="radio", _name="filetype",
-                            _value="xls", _checked="checked")),
+                     TD(INPUT(_type = "radio",
+                              _name = "filetype",
+                              _value = "xls",
+                              _checked = "checked",
+                              ),
+                        ),
                      TD(".xls (Excel)"),
-                     TD(INPUT(_type="radio", _name="filetype", _value="po")),
+                     TD(INPUT(_type = "radio",
+                              _name = "filetype",
+                              _value = "po",
+                              ),
+                        ),
                      TD(".po (Pootle)"),
                      BR(),
                      BR(),
@@ -1076,8 +1178,7 @@ def translate():
                 # Display the form to view translated percentage
                 from s3.s3translate import TranslateAPI
                 A = TranslateAPI()
-                langlist = A.get_langcodes()
-                langlist.sort()
+                langlist = sorted(A.get_langcodes())
                 # Drop-down for selecting language codes
                 lang_col = TD()
                 lang_dropdown = SELECT(_name="code")
@@ -1102,24 +1203,28 @@ def translate():
 
         elif opt == "4":
             # Add strings manually
-            if form.accepts(request.vars, session):
-                # Retrieve strings from the uploaded file
-                from s3.s3translate import TranslateReadFiles
-                f = request.vars.upload.file
-                strings = []
-                R = TranslateReadFiles()
-                for line in f:
-                    strings.append(line)
-                # Update the file containing user strings
-                R.merge_user_strings_file(strings)
-                response.confirmation = T("File uploaded")
-
             div = DIV(T("Upload a text file containing new-line separated strings:"),
                       INPUT(_type="file", _name="upload"),
                       BR(),
                       INPUT(_type="submit", _value=T("Upload")),
                       )
             form.append(div)
+
+            if form.accepts(request.vars, session):
+
+                # Retrieve strings from the uploaded file
+                strings = []
+                uploaded_file = request.vars.upload.file
+                lines = uploaded_file.read().decode("utf-8").splitlines()
+                for line in lines:
+                    strings.append(line)
+
+                # Update the file containing user strings
+                from s3.s3translate import TranslateReadFiles
+                TranslateReadFiles.merge_user_strings_file(strings)
+
+                response.confirmation = T("File uploaded")
+
             output["form"] = form
 
         return output
@@ -1189,6 +1294,40 @@ def result():
               }
 
     return output
+
+# =============================================================================
+@auth.s3_requires_membership(1)
+def task():
+    """
+        Scheduler tasks: RESTful CRUD controller
+    """
+
+    s3db.add_components("scheduler_task",
+                        scheduler_run = "task_id",
+                        )
+    def prep(r):
+
+        if r.component_name == "run":
+
+            component = r.component
+
+            ctable = component.table
+
+            field = ctable.traceback
+            from s3 import s3_text_represent
+            field.represent = s3_text_represent
+
+            component.configure(insertable = False,
+                                editable = False,
+                                )
+
+        s3task.configure_tasktable_crud(task="", status_writable=True)
+        return True
+    s3.prep = prep
+
+    return s3_rest_controller("scheduler", "task",
+                              rheader = s3db.s3_scheduler_rheader,
+                              )
 
 # =============================================================================
 # Configurations

@@ -167,7 +167,7 @@ $('#show-login').click(function(e){
             s3.jquery_ready.append(script)
 
             # This user isn't yet logged-in
-            if request.cookies.has_key("registered"):
+            if "registered" in request.cookies:
                 # This browser has logged-in before
                 registered = True
 
@@ -238,7 +238,7 @@ $(document).ready(function(){
         s3.jquery_ready.append(script)
 
         s3.stylesheets.append("../themes/%s/homepage.css" % THEME)
-        self._view(THEME, "index.html")
+        self._view(settings.get_theme_layouts(), "index.html")
 
         return output
 

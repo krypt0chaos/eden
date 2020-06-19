@@ -2,7 +2,7 @@
 
 """ S3 User Roles Management
 
-    @copyright: 2018-2019 (c) Sahana Software Foundation
+    @copyright: 2018-2020 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -36,6 +36,7 @@ import json
 
 from gluon import current, URL, DIV, SPAN, SQLFORM, INPUT, A, LI, UL
 
+from s3compat import StringIO, long
 from s3dal import Field
 from .s3crud import S3CRUD
 from .s3rest import S3Method
@@ -386,9 +387,9 @@ class S3RoleManager(S3Method):
             permissions.readable = permissions.writable = False
         elif not current.auth.permission.use_cacls:
             # Security policy does not use configurable permissions
-            record.permissions = None
-            permissions.represent = self.policy_hint
-            permissions.writable = False
+            if record:
+                record.permissions = None
+            permissions.widget = self.policy_hint
         elif readonly:
             # Read-only view (dummy) - just hide permissions
             permissions.readable = permissions.writable = False
@@ -481,21 +482,27 @@ class S3RoleManager(S3Method):
 
     # -------------------------------------------------------------------------
     @staticmethod
-    def policy_hint(value):
+    def policy_hint(field, value, **attr):
         """
             Show a hint if permissions cannot be edited due to security policy
 
-            @param value: ignored (dummy, function is used as Field.represent)
+            @param field: the Field instance
+            @param value: the current field value (ignored)
+            @param attr: DOM attributes for the widget (ignored)
         """
 
         T = current.T
 
         warn = T("The current system configuration uses hard-coded access rules (security policy %(policy)s).") % \
-               {"policy": current.deployment_settings.get_security_policy()}
+                {"policy": current.deployment_settings.get_security_policy()}
         hint = T("Change to security policy 3 or higher if you want to define permissions for roles.")
 
         return DIV(SPAN(warn, _class="rm-fixed"),
                    SPAN(hint, _class="rm-hint"),
+                   INPUT(_type = "hidden",
+                         _name = field.name,
+                         _value= "",
+                         ),
                    )
 
     # -------------------------------------------------------------------------
@@ -801,11 +808,11 @@ class S3RoleManager(S3Method):
             query = (utable.id == r.id) & \
                     (otable.id == utable.organisation_id) & \
                     (otable.pe_id.belongs(pe_ids))
-            row = current.db(query).select(utable.id, limitby=(0, 1)).first()
+            row = current.db(query).select(utable.id,
+                                           limitby = (0, 1)
+                                           ).first()
             if not row:
                 r.unauthorised()
-
-        s3 = current.response.s3
 
         # Which roles can the current user manage for this user?
         managed_roles = self.get_managed_roles(r.id)
@@ -834,7 +841,7 @@ class S3RoleManager(S3Method):
             # The form field
             field = mtable.user_id
             field.readable = field.writable = True
-            field.widget = S3RolesWidget(mode="roles",
+            field.widget = S3RolesWidget(mode = "roles",
                                          items = managed_roles,
                                          use_realms = use_realms,
                                          realm_types = realm_types,
@@ -843,6 +850,7 @@ class S3RoleManager(S3Method):
                                          )
 
             # Render form
+            s3 = current.response.s3
             tablename = str(mtable)
             form = SQLFORM.factory(field,
                                    record = {"id": None, "user_id": r.id},
@@ -901,11 +909,13 @@ class S3RoleManager(S3Method):
 
                 # Update role assignments
                 if added:
-                    add_role = auth.s3_assign_role
+                    add_role = current.deployment_settings.get_auth_add_role() or \
+                               auth.s3_assign_role
                     for group_id, pe_id in added:
                         add_role(user_id, group_id, for_pe=pe_id)
                 if removed:
-                    remove_role = auth.s3_withdraw_role
+                    remove_role = current.deployment_settings.get_auth_remove_role() or \
+                                  auth.s3_withdraw_role
                     for group_id, pe_id in removed:
                         remove_role(user_id, group_id, for_pe=pe_id)
 
@@ -1154,6 +1164,12 @@ class S3RoleManager(S3Method):
         ADMINS = (sr.ADMIN, sr.ORG_ADMIN, sr.ORG_GROUP_ADMIN)
         UNRESTRICTABLE = (sr.ADMIN, sr.AUTHENTICATED, sr.ANONYMOUS)
 
+        # Check whether certain roles require another role to be assignable
+        privileged_roles = current.deployment_settings.get_auth_privileged_roles()
+        if not privileged_roles:
+            privileged_roles = {}
+        elif isinstance(privileged_roles, (tuple, set, list)):
+            privileged_roles = {u:u for u in privileged_roles}
 
         table = auth.settings.table_group
         query = (table.hidden == False) & \
@@ -1168,12 +1184,15 @@ class S3RoleManager(S3Method):
         roles = {}
         for row in rows:
 
-            role = {"l": row.role or row.uuid}
-
             role_id = row.id
+            role_uuid = row.uuid
+
+            role = {"l": row.role or role_uuid}
 
             if role_id in ADMINS:
                 assignable = has_role(role_id)
+            elif role_uuid in privileged_roles:
+                assignable = has_role(privileged_roles[role_uuid])
             else:
                 assignable = role_id not in AUTO
 
@@ -1407,32 +1426,8 @@ class S3PermissionWidget(object):
         if use_tacls:
             widget_opts["models"] = self.get_active_models()
 
-        # Localized strings for client-side widget
-        i18n = {"rm_Add": T("Add"),
-                "rm_AddRule": T("Add Rule"),
-                "rm_AllEntities": T("All Entities"),
-                "rm_AllRecords": T("All Records"),
-                "rm_AssignedEntities": T("Assigned Entities"),
-                "rm_Cancel": T("Cancel"),
-                "rm_CollapseAll": T("Collapse All"),
-                "rm_ConfirmDeleteRule": T("Do you want to delete this rule?"),
-                "rm_Default": T("default"),
-                "rm_DeleteRule": T("Delete"),
-                "rm_ExpandAll": T("Expand All"),
-                "rm_NoAccess": T("No access"),
-                "rm_NoRestrictions": T("No restrictions"),
-                "rm_Others": T("Others"),
-                "rm_OwnedRecords": T("Owned Records"),
-                "rm_Page": T("Page"),
-                "rm_RestrictedTables": T("Restricted Tables"),
-                "rm_Scope": T("Scope"),
-                "rm_SystemTables": T("System Tables"),
-                "rm_Table": T("Table"),
-                "rm_UnrestrictedTables": T("Unrestricted Tables"),
-                }
-
         # Inject the client-side script
-        self.inject_script(widget_id, widget_opts, i18n)
+        self.inject_script(widget_id, widget_opts)
 
         return widget
 
@@ -1450,9 +1445,10 @@ class S3PermissionWidget(object):
 
         # Active modules
         modules = current.deployment_settings.modules
-        active= {k: (s3_str(modules[k].name_nice), modules[k].restricted)
-                 for k in modules if k not in exclude
-                 }
+        active = {k: (s3_str(modules[k].get("name_nice", modules[k])),
+                      modules[k].get("restricted", True))
+                  for k in modules if k not in exclude
+                  }
 
         # Special controllers for dynamic models
         if current.auth.permission.use_facls:
@@ -1612,16 +1608,13 @@ class S3PermissionWidget(object):
         return default_permissions
 
     # -------------------------------------------------------------------------
-    def inject_script(self, widget_id, options, i18n):
+    def inject_script(self, widget_id, options):
         """
             Inject the necessary JavaScript for the widget
 
             @param widget_id: the widget ID
                               (=element ID of the person_id field)
             @param options: JSON-serializable dict of widget options
-            @param i18n: translations of screen messages rendered by
-                         the client-side script,
-                         a dict {messageKey: translation}
         """
 
         s3 = current.response.s3
@@ -1636,7 +1629,7 @@ class S3PermissionWidget(object):
         scripts = s3.scripts
         if script not in scripts:
             scripts.append(script)
-            self.inject_i18n(i18n)
+            self.inject_i18n()
 
         # Widget options
         opts = {}
@@ -1654,16 +1647,44 @@ class S3PermissionWidget(object):
 
     # -------------------------------------------------------------------------
     @staticmethod
-    def inject_i18n(labels):
+    def inject_i18n():
         """
             Inject translations for screen messages rendered by the
             client-side script
-
-            @param labels: dict of translations {messageKey: translation}
         """
 
+        if current.session.s3.language == "en":
+            # No need to translate
+            return
+
+        T = current.T
+
+        # Localized strings for client-side widget
+        i18n = {"rm_Add": T("Add"),
+                "rm_AddRule": T("Add Rule"),
+                "rm_AllEntities": T("All Entities"),
+                "rm_AllRecords": T("All Records"),
+                "rm_AssignedEntities": T("Assigned Entities"),
+                "rm_Cancel": T("Cancel"),
+                "rm_CollapseAll": T("Collapse All"),
+                "rm_ConfirmDeleteRule": T("Do you want to delete this rule?"),
+                "rm_Default": T("default"),
+                "rm_DeleteRule": T("Delete"),
+                "rm_ExpandAll": T("Expand All"),
+                "rm_NoAccess": T("No access"),
+                "rm_NoRestrictions": T("No restrictions"),
+                "rm_Others": T("Others"),
+                "rm_OwnedRecords": T("Owned Records"),
+                "rm_Page": T("Page"),
+                "rm_RestrictedTables": T("Restricted Tables"),
+                "rm_Scope": T("Scope"),
+                "rm_SystemTables": T("System Tables"),
+                "rm_Table": T("Table"),
+                "rm_UnrestrictedTables": T("Unrestricted Tables"),
+                }
+
         strings = ['''i18n.%s="%s"''' % (k, s3_str(v))
-                                        for k, v in labels.items()]
+                                        for k, v in i18n.items()]
         current.response.s3.js_global.append("\n".join(strings))
 
 # =============================================================================
@@ -1787,11 +1808,11 @@ class S3RolesWidget(object):
 
         if self.mode == "roles":
             query = (table.user_id == record_id) & \
-                    (table.group_id.belongs(self.items.keys()))
+                    (table.group_id.belongs(set(self.items.keys())))
             field = table.group_id
         else:
             query = (table.group_id == record_id) & \
-                    (table.user_id.belongs(self.items.keys()))
+                    (table.user_id.belongs(set(self.items.keys())))
             field = table.user_id
 
         use_realms = self.use_realms
@@ -1928,7 +1949,7 @@ class S3RolesExport(object):
 
         # Look up all rules, ordered by UID, controller, function, table
         rtable = auth.permission.table
-        query = (rtable.group_id.belongs(role_dicts.keys())) & \
+        query = (rtable.group_id.belongs(set(role_dicts.keys()))) & \
                 (rtable.deleted == False)
         rules = db(query).select(rtable.id,
                                  rtable.group_id,
@@ -1938,6 +1959,7 @@ class S3RolesExport(object):
                                  rtable.uacl,
                                  rtable.oacl,
                                  rtable.entity,
+                                 rtable.unrestricted,
                                  )
         self.rules = rules
 
@@ -1945,7 +1967,9 @@ class S3RolesExport(object):
         entities = set()
         for rule in rules:
             entity = rule.entity
-            if entity is not None:
+            if rule.unrestricted:
+                self.col_entity = True
+            elif entity is not None:
                 self.col_entity = True
                 entities.add(entity)
 
@@ -1966,10 +1990,6 @@ class S3RolesExport(object):
         """
 
         import csv
-        try:
-            from cStringIO import StringIO    # Faster, where available
-        except ImportError:
-            from StringIO import StringIO
 
         # Optional columns
         col_protected = self.col_protected
@@ -1986,7 +2006,7 @@ class S3RolesExport(object):
         # Rule fields
         fieldnames.extend(["controller", "function", "table", "uacl", "oacl"])
         if col_entity:
-            fieldnames.extend("entity")
+            fieldnames.append("entity")
 
         # Helper to get the role UID for a rule
         role_dicts = self.roles
@@ -1998,8 +2018,8 @@ class S3RolesExport(object):
         rules = sorted(self.rules,
                        key = lambda rule: (get_uid(rule.group_id),
                                            rule.controller or "zzzzzz",
-                                           rule.function,
-                                           rule.tablename,
+                                           rule.function or "",
+                                           rule.tablename or "",
                                            ))
 
         # Create the CSV
@@ -2021,15 +2041,14 @@ class S3RolesExport(object):
             # The entity column (optional)
             if col_entity:
                 entity = rule.entity
-                if entity is not None:
-                    if entity == 0:
-                        rule_dict["entity"] = "any"
+                if rule.unrestricted:
+                    rule_dict["entity"] = "any"
+                elif entity is not None:
+                    org = orgs.get(entity)
+                    if org:
+                        rule_dict["entity"] = org
                     else:
-                        org = orgs.get(entity)
-                        if org:
-                            rule_dict["entity"] = org
-                        else:
-                            continue
+                        continue
 
             # The target columns (controller, function, table)
             if rule.tablename:

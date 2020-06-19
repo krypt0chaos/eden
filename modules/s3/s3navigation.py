@@ -2,7 +2,7 @@
 
 """ S3 Navigation Module
 
-    @copyright: 2011-2019 (c) Sahana Software Foundation
+    @copyright: 2011-2020 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -43,6 +43,8 @@ __all__ = ("S3NavigationItem",
 
 from gluon import *
 from gluon.storage import Storage
+
+from s3compat import basestring, xrange
 from .s3utils import s3_str
 
 # =============================================================================
@@ -224,7 +226,7 @@ class S3NavigationItem(object):
         # Layout attributes and options
         attr = Storage()
         opts = Storage()
-        for k, v in attributes.iteritems():
+        for k, v in attributes.items():
             if k[0] == "_":
                 attr[k] = v
             else:
@@ -745,7 +747,7 @@ class S3NavigationItem(object):
         #   7 = args match and vars match
         if level == 2:
             extra = 1
-            for k, v in link_vars.iteritems():
+            for k, v in link_vars.items():
                 if k not in rvars or k in rvars and rvars[k] != s3_str(v):
                     extra = 0
                     break
@@ -1207,11 +1209,16 @@ class S3NavigationItem(object):
         return len(self.components)
 
     # -------------------------------------------------------------------------
-    def __nonzero__(self):
+    def __bool__(self):
         """
             To be used instead of __len__ to determine the boolean value
             if this item, should always return True for instances
         """
+
+        return self is not None
+
+    def __nonzero__(self):
+        """ Python-2.7 backwards-compatibility """
 
         return self is not None
 
@@ -1467,10 +1474,9 @@ class S3ComponentTabs(object):
 
             # Complete the tab URL with args, deal with "viewing"
             if component:
-                if record_id:
-                    args = [record_id, component]
-                else:
-                    args = [component]
+                args = [record_id, component] if record_id else [component]
+                if tab.method:
+                    args.append(tab.method)
                 if "viewing" in _vars:
                     del _vars["viewing"]
                 _href = URL(function, args=args, vars=_vars)
@@ -1585,14 +1591,13 @@ class S3ComponentTab(object):
         # @todo: use component hook label/plural as fallback for title
         #        (see S3Model.add_components)
         title, component = tab[:2]
+
+        self.title = title
+
         if component and component.find("/") > 0:
             function, component = component.split("/", 1)
         else:
             function = None
-
-        self.title = title
-
-        self.native = False
 
         if function:
             self.function = function
@@ -1604,11 +1609,16 @@ class S3ComponentTab(object):
         else:
             self.component = None
 
+        self.native = False
+        self.method = None
+
         if len(tab) > 2:
             tab_vars = self.vars = Storage(tab[2])
             if "native" in tab_vars:
                 self.native = True if tab_vars["native"] else False
                 del tab_vars["native"]
+            if len(tab) > 3:
+                self.method = tab[3]
         else:
             self.vars = None
 
@@ -1697,7 +1707,7 @@ class S3ComponentTab(object):
         if self.vars is None:
             return True
         get_vars = r.get_vars
-        for k, v in self.vars.iteritems():
+        for k, v in self.vars.items():
             if v is None:
                 continue
             if k not in get_vars or \

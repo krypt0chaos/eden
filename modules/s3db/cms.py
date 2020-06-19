@@ -2,7 +2,7 @@
 
 """ Sahana Eden Content Management System Model
 
-    @copyright: 2012-2019 (c) Sahana Software Foundation
+    @copyright: 2012-2020 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -47,6 +47,7 @@ __all__ = ("S3ContentModel",
 import datetime
 import json
 import os
+import re
 
 from gluon import *
 from gluon.storage import Storage
@@ -224,7 +225,11 @@ class S3ContentModel(S3Model):
             body_represent = XML
             body_widget = s3_richtext_widget
         else:
-            body_represent = lambda body: XML(s3_URLise(body))
+            def body_represent(body):
+                if not re.search(r"<a[^>]* href=", body):
+                    body = s3_URLise(body)
+                return XML(body)
+
             body_widget = None
 
         # WACOP Priorities
@@ -1260,7 +1265,7 @@ def cms_index(module,
     settings = current.deployment_settings
 
     if not page_name:
-        page_name = settings.modules[module].name_nice
+        page_name = settings.modules[module].get("name_nice", module)
 
     response.title = page_name
 
@@ -1703,7 +1708,7 @@ def cms_post_list_layout(list_id, item_id, resource, rfields, record):
                _class="s3-truncate",
                )
 
-    date = record["cms_post.date"]
+    date = record["cms_post.date"] or ""
     date = SPAN(date,
                 _class="date-title",
                 )
@@ -1954,6 +1959,7 @@ def cms_post_list_layout(list_id, item_id, resource, rfields, record):
         doc_list = UL(_class="f-dropdown dropdown-menu",
                       _role="menu",
                       _id=doc_list_id,
+                      # Foundation:
                       data={"dropdown-content": ""},
                       )
         retrieve = db.doc_document.file.retrieve
@@ -1976,8 +1982,12 @@ def cms_post_list_layout(list_id, item_id, resource, rfields, record):
                      SPAN(_class="caret"),
                      _class="btn dropdown-toggle dropdown",
                      _href="#",
-                     data={"toggle": "dropdown",
+                     data={# Both Bootstrap & Foundation:
                            "dropdown": doc_list_id,
+                           # Foundation:
+                           "options": "is_hover:true; hover_timeout:5000",
+                           # Bootstrap:
+                           "toggle": "dropdown",
                            },
                      ),
                    doc_list,

@@ -13,7 +13,7 @@ if not settings.has_module(module):
 def index():
     "Module's Home Page"
 
-    module_name = settings.modules[module].name_nice
+    module_name = settings.modules[module].get("name_nice")
     response.title = module_name
     return dict(module_name=module_name)
 
@@ -176,8 +176,8 @@ def upload_bulk():
 
         image = request.body.read()
         # Convert to StringIO for onvalidation/import
-        import cStringIO
-        image = cStringIO.StringIO(image)
+        from s3compat import StringIO
+        image = StringIO(image)
         source = Storage()
         source.filename = name
         source.file = image
@@ -249,13 +249,12 @@ def ck_upload():
 
     title = os.path.splitext(old_filename)[0]
 
-    result = table.validate_and_insert(
-        title=title,
-        filename=old_filename,
-        upload=new_filename,
-        flength=length,
-        mime_type=mime_type
-    )
+    result = table.validate_and_insert(title = title,
+                                       filename = old_filename,
+                                       upload = new_filename,
+                                       flength = length,
+                                       mime_type = mime_type,
+                                       )
 
     if result.id:
         text = ""
@@ -263,9 +262,12 @@ def ck_upload():
         text = result.errors
 
     url = URL(c="default", f="download",
-              args=[new_filename])
+              args = [new_filename])
 
-    return dict(text=text, cknum=request.vars.CKEditorFuncNum, url=url)
+    return {"text": text,
+            "cknum": request.vars.CKEditorFuncNum,
+            "url": url,
+            }
 
 # -----------------------------------------------------------------------------
 def ck_browse():
@@ -286,9 +288,11 @@ def ck_browse():
     #    else:
     #        set = set(table[key] == value)
 
-    rows = set.select(orderby=table.title)
+    rows = set.select(orderby = table.title)
 
-    return dict(rows=rows, cknum=request.vars.CKEditorFuncNum)
+    return {"rows": rows,
+            "cknum": request.vars.CKEditorFuncNum,
+            }
 
 # -----------------------------------------------------------------------------
 def ck_delete():

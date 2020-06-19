@@ -14,9 +14,10 @@ if not settings.has_module(module):
 def index():
     """ Module's Home Page """
 
-    module_name = settings.modules[module].name_nice
+    module_name = settings.modules[module].get("name_nice")
     response.title = module_name
-    return dict(module_name=module_name)
+    return {"module_name": module_name,
+            }
 
 # -----------------------------------------------------------------------------
 def template():
@@ -35,21 +36,12 @@ def template():
             query = (rtable.template_id == r.id) & \
                     (rtable.deleted == False)
             if db(query).select(rtable.id,
-                                limitby=(0, 1)
+                                limitby = (0, 1)
                                 ):
                 s3db.configure("dc_question",
                                deletable = False,
                                editable = False,
                                )
-
-            # Sections for this template only
-            f = s3db.dc_question.section_id
-            f.requires = IS_EMPTY_OR(
-                            IS_ONE_OF(db, "dc_section.id",
-                                      f.represent,
-                                      filterby="template_id",
-                                      filter_opts=[r.id],
-                                      ))
 
             # Add JS
             scripts_append = s3.scripts.append
@@ -64,8 +56,14 @@ def template():
 
             # Open in native controller to access Translations tabs
             s3db.configure("dc_question",
-                           linkto = lambda record_id: URL(f="question", args=[record_id, "read"]),
-                           linkto_update = lambda record_id: URL(f="question", args=[record_id, "update"]),
+                           linkto = lambda record_id: \
+                                        URL(f="question",
+                                            args = [record_id, "read"],
+                                            ),
+                           linkto_update = lambda record_id: \
+                                            URL(f="question",
+                                                args = [record_id, "update"],
+                                                ),
                            )
 
         return True
@@ -113,9 +111,21 @@ def target():
 
                 # Open in native controller (cannot just set native as can't call this 'response')
                 s3db.configure("dc_response",
-                               linkto = lambda record_id: URL(f="respnse", args=[record_id, "read"]),
-                               linkto_update = lambda record_id: URL(f="respnse", args=[record_id, "update"]),
+                               linkto = lambda record_id: \
+                                            URL(f="respnse",
+                                                args = [record_id, "read"],
+                                                ),
+                               linkto_update = lambda record_id: \
+                                                        URL(f="respnse",
+                                                            args = [record_id, "update"],
+                                                            ),
                                )
+        elif r.id and not r.component and r.representation == "xls":
+            # Custom XLS Exporter to include all Responses.
+            r.set_handler("read", s3db.dc_TargetXLS(),
+                          http = ("GET", "POST"),
+                          representation = "xls"
+                          )
 
         return True
     s3.prep = prep
@@ -141,7 +151,7 @@ def respnse(): # Cannot call this 'response' or it will clobber the global
                 (rtable.template_id == ttable.id) & \
                 (ttable.table_id == dtable.id)
         template = db(query).select(dtable.name,
-                                    limitby=(0, 1),
+                                    limitby = (0, 1),
                                     ).first()
         try:
             dtablename = template.name

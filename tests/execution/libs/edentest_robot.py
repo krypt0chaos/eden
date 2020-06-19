@@ -29,17 +29,17 @@ class edentest_robot(object):
         logger.info("base_url %s" % (self.base_url))
 
         # Create the request_url for the get request
-        request_url = "%s/default/get_settings/deployment_settings" % (self.base_url)
+        request_url = "%s/default/get_settings" % (self.base_url)
 
         for key in asked:
             request_url = "%s/%s" % (request_url, key)
         logger.info("request_url %s" % (request_url))
 
         # Create the headers
-        b64_auth_string = b64encode("%s:%s" % (self.admin_email, self.admin_password))
+        auth_string = "%s:%s" % (self.admin_email, self.admin_password)
         headers = {
             "content-type" : "application/json",
-            "Authorization" : "Basic %s" % b64_auth_string
+            "Authorization" : "Basic %s" % b64encode(auth_string.encode("utf-8")).decode("utf-8")
             }
 
         # Send the response and get the response
@@ -65,7 +65,7 @@ class edentest_robot(object):
                 m = "Check 000_config.py/config.py/server/internet settings. request %s" \
                 % request_url
 
-            BuiltIn().fail(msg=m)
+            BuiltIn().fail(msg = m)
 
         output = response.json()
 

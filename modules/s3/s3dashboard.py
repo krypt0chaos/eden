@@ -2,7 +2,7 @@
 
 """ Dashboards
 
-    @copyright: 2016-2019 (c) Sahana Software Foundation
+    @copyright: 2016-2020 (c) Sahana Software Foundation
     @license: MIT
 
     @requires: U{B{I{gluon}} <http://web2py.com>}
@@ -37,13 +37,13 @@ __all__ = ("S3Dashboard",
            )
 
 import json
-import uuid
+from uuid import uuid4
 
 from gluon import *
 
 from .s3utils import s3_get_extension, s3_str
 from .s3widgets import ICON
-from .s3validators import JSONERRORS
+#from .s3validators import JSONERRORS
 
 DEFAULT = lambda: None
 DEFAULT_FORMAT = "html"
@@ -200,7 +200,7 @@ class S3DashboardContext(object):
                 agent_id = ",".join(agent_id)
             if "," in agent_id:
                 bulk = True
-                agent_id = set([s.strip() for s in agent_id.split(",")])
+                agent_id = {s.strip() for s in agent_id.split(",")}
                 agent_id.discard("")
                 agent_id = list(agent_id)
             elif bulk:
@@ -352,7 +352,7 @@ class S3DashboardConfig(object):
                 configs.append(widget)
 
         # Generate a new version key
-        version = uuid.uuid4().get_hex()
+        version = uuid4().get_hex()
 
         config_id = self.config_id
         if not config_id:
@@ -546,7 +546,7 @@ class S3DashboardLayout(object):
         # Set up channels
         CHANNELS = self.CHANNELS
         if CHANNELS:
-            self.channels = dict((name, S3DashboardChannel()) for name in CHANNELS)
+            self.channels = {name: S3DashboardChannel() for name in CHANNELS}
         else:
             self.channels = {}
 
@@ -580,7 +580,7 @@ class S3DashboardBoxesLayout(S3DashboardLayout):
             @return: the dashboard contents (TAG)
         """
 
-        T = current.T
+        #T = current.T
 
         channel = self.build_channel
 

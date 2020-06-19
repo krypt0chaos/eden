@@ -1,7 +1,7 @@
 /**
  * jQuery UI InlineComponent Widget
  *
- * @copyright 2015-2019 (c) Sahana Software Foundation
+ * @copyright 2015-2020 (c) Sahana Software Foundation
  * @license MIT
  *
  * requires jQuery 1.9.1+
@@ -1539,8 +1539,8 @@
                 var row = $(this),
                     empty = true;
 
-                if (row.hasClass('required')) {
-                    // Treat required rows as non-empty
+                if (row.hasClass('required') || row.hasClass('edit-row')) {
+                    // Treat required rows and edit-rows as non-empty
                     empty = false;
 
                 } else {

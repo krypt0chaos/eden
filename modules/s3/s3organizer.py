@@ -2,7 +2,7 @@
 
 """ S3 Organizer (Calendar-based CRUD)
 
-    @copyright: 2018-2019 (c) Sahana Software Foundation
+    @copyright: 2018-2020 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -41,12 +41,13 @@ except ImportError:
     raise
 import json
 import os
-import uuid
+from uuid import uuid4
 
 from gluon import current, DIV, INPUT
 from gluon.storage import Storage
 
-from .s3datetime import s3_decode_iso_datetime
+from s3compat import basestring
+from .s3datetime import s3_decode_iso_datetime, S3DateTime
 from .s3rest import S3Method
 from .s3utils import s3_str
 from .s3validators import JSONERRORS
@@ -195,13 +196,13 @@ class S3Organizer(S3Method):
                            "useTime": config.get("use_time"),
                            "baseURL": r.url(method=""),
                            "labelCreate": s3_str(crud_string(self.tablename, "label_create")),
-                           "insertable": resource.get_config("insertable", True) and \
+                           "insertable": get_config("insertable", True) and \
                                          permitted("create"),
-                           "editable": resource.get_config("editable", True) and \
+                           "editable": get_config("editable", True) and \
                                        permitted("update"),
                            "startEditable": start.field and start.field.writable,
                            "durationEditable": end and end.field and end.field.writable,
-                           "deletable": resource.get_config("deletable", True) and \
+                           "deletable": get_config("deletable", True) and \
                                         permitted("delete"),
                            # Forced reload on update, e.g. if onaccept changes
                            # other data that are visible in the organizer
@@ -228,7 +229,7 @@ class S3Organizer(S3Method):
             resource_config["colors"] = config.get("colors")
 
         # Generate form key
-        formkey = uuid.uuid4().get_hex()
+        formkey = uuid4().hex
 
         # Store form key in session
         session = current.session
@@ -668,14 +669,41 @@ class S3Organizer(S3Method):
 
     # -------------------------------------------------------------------------
     @staticmethod
-    def parse_interval(intervalstr):
+    def parse_dt(dtstr, end=False):
+        """
+            Parse an ISO8601-format date/datetime string as interval start|end
+
+            @param dtstr: the date/datetime string
+            @param end: interpret the string as interval end
+
+            @returns: a UTC datetime
+        """
+
+        date_only = "T" not in dtstr
+
+        try:
+            dt = s3_decode_iso_datetime(dtstr)
+        except ValueError:
+            return None
+
+        if date_only:
+            dt = dt.replace(hour=0, minute=0, second=0, tzinfo=None)
+            if end:
+                dt += datetime.timedelta(days=1)
+            dt = S3DateTime.to_utc(dt)
+
+        return dt
+
+    # -------------------------------------------------------------------------
+    @classmethod
+    def parse_interval(cls, intervalstr):
         """
             Parse an interval string of the format "<ISO8601>--<ISO8601>"
             into a pair of datetimes
 
             @param intervalstr: the interval string
 
-            @returns: tuple of datetimes (start, end)
+            @returns: tuple of UTC datetimes (start, end)
         """
 
         start = end = None
@@ -685,18 +713,8 @@ class S3Organizer(S3Method):
             if len(dates) != 2:
                 return start, end
 
-            try:
-                start = s3_decode_iso_datetime(dates[0])
-            except ValueError:
-                pass
-            else:
-                start = start.replace(hour=0, minute=0, second=0)
-            try:
-                end = s3_decode_iso_datetime(dates[1])
-            except ValueError:
-                pass
-            else:
-                end = end.replace(hour=0, minute=0, second=0)
+            start = cls.parse_dt(dates[0])
+            end = cls.parse_dt(dates[1], end=True)
 
         return start, end
 
@@ -821,6 +839,9 @@ class S3OrganizerWidget(object):
         tformat = settings.get_ui_organizer_time_format()
         if tformat:
             script_opts["timeFormat"] = tformat
+        snap_duration = settings.get_ui_organizer_snap_duration()
+        if snap_duration:
+            script_opts["snapDuration"] = snap_duration
 
         self.inject_script(widget_id, script_opts)
 
@@ -891,6 +912,12 @@ class S3OrganizerWidget(object):
            os.path.exists(os.path.join(l10n_path, l10n_file)):
             options["locale"] = language
             inject.insert(-1, "fullcalendar/locale/%s" % l10n_file)
+
+        # Choose icon set (other than default FA4)
+        icon_set = current.deployment_settings.get_ui_icons()
+        if icon_set == "font-awesome3":
+            options["refreshIconClass"] = "icon-refresh"
+            options["calendarIconClass"] = "icon-calendar"
 
         # Inject scripts
         for path in inject:

@@ -3,7 +3,7 @@
 """
     REST Method to produce a PDF of HR records to collect signatures
 
-    @copyright: 2018-2019 (c) Sahana Software Foundation
+    @copyright: 2018-2020 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -36,6 +36,7 @@ from gluon import current, DIV, H4, H5, IMG, TABLE, TD, TH, TR
 from gluon.contenttype import contenttype
 
 from s3 import S3Method, s3_format_fullname
+from s3compat import long
 
 # =============================================================================
 class HRSignatureList(S3Method):

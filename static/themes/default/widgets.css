@@ -502,6 +502,9 @@ div.dl {
 .dl-3-cols {
     width: 31%;
 }
+.dl-4-cols {
+    width: 22%;
+}
 
 .dl-field {
     clear: left;
@@ -568,10 +571,15 @@ ul.ui-autocomplete {
     font-weight: bold;
 }
 
+.mapError {
+  border: solid 1px red;
+}
+
 /* Help Popup */
 .tooltip,
 .tooltipbody,
 .stickytip,
+.htmltip,
 .ajaxtip {
     position: static;
     text-transform: uppercase;
@@ -583,12 +591,14 @@ ul.ui-autocomplete {
 .tooltip span,
 .tooltipbody span,
 .stickytip span,
+.htmltip .htmltip-content,
 .ajaxtip span {
     display:none;
 }
 .tooltip:hover,
 .tooltipbody:hover,
 .stickytip:hover,
+.htmltip:hover,
 .ajaxtip:hover {
     background-color: transparent;
     height: 20px;

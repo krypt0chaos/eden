@@ -4,7 +4,7 @@
 
     @requires: U{B{I{gluon}} <http://web2py.com>}
 
-    @copyright: 2012-2019 (c) Sahana Software Foundation
+    @copyright: 2012-2020 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -144,7 +144,7 @@ class S3Migration(object):
 
         self.environment = environment
 
-        (db_type, db_string, pool_size) = settings.get_database_string()
+        db_type, db_string, _ = settings.get_database_string()
         self.db_engine = db_type
 
         # Get a handle to the database
@@ -238,8 +238,6 @@ class S3Migration(object):
             # Nothing to backup
             return
 
-        import os
-
         db = self.db
         folder = "%s/databases/backup" % current.request.folder
 
@@ -321,7 +319,7 @@ class S3Migration(object):
                     tables.append(s)
                     stable = db[s]
                     rows = db(stable._id > 0).select(stable.instance_type)
-                    instance_types = set([r.instance_type for r in rows])
+                    instance_types = {r.instance_type for r in rows}
                     for t in instance_types:
                         tables.append(t)
         if strbools:
@@ -406,7 +404,7 @@ class S3Migration(object):
         new_version = new_version.strip()
 
         # Look for a script to the current version
-        path = os.path.join(request.folder, "static", "scripts", "upgrade")
+        path = os.path.join(current.request.folder, "static", "scripts", "upgrade")
 
     # -------------------------------------------------------------------------
     def run_model(self):
@@ -734,7 +732,9 @@ class S3Migration(object):
         elif db_engine == "postgres":
             # http://www.postgresql.org/docs/9.3/static/sql-altertable.html
             sql = "ALTER TABLE %(tablename)s ALTER COLUMN %(fieldname)s SET NOT NULL;" % \
-                dict(tablename=tablename, fieldname=fieldname)
+                {"tablename": tablename,
+                 "fieldname": fieldname,
+                 }
 
         try:
             db.executesql(sql)
@@ -775,12 +775,16 @@ class S3Migration(object):
         elif db_engine == "mysql":
             # http://dev.mysql.com/doc/refman/5.1/en/alter-table.html
             sql = "ALTER TABLE %(tablename)s DROP COLUMN %(fieldname)s;" % \
-                dict(tablename=tablename, fieldname=fieldname)
+                {"tablename": tablename,
+                 "fieldname": fieldname,
+                 }
 
         elif db_engine == "postgres":
             # http://www.postgresql.org/docs/9.3/static/sql-altertable.html
             sql = "ALTER TABLE %(tablename)s DROP COLUMN %(fieldname)s;" % \
-                dict(tablename=tablename, fieldname=fieldname)
+                {"tablename": tablename,
+                 "fieldname": fieldname,
+                 }
 
         try:
             db.executesql(sql)
@@ -832,7 +836,12 @@ class S3Migration(object):
                 if "`" in fk:
                     fk = fk.split("`")[0]
                 sql = "ALTER TABLE `%(tablename)s` DROP FOREIGN KEY `%(fk)s`, ALTER TABLE %(tablename)s ADD CONSTRAINT %(fk)s FOREIGN KEY (%(fieldname)s) REFERENCES %(reftable)s(id) ON DELETE %(ondelete)s;" % \
-                    dict(tablename=tablename, fk=fk, fieldname=fieldname, reftable=reftable, ondelete=ondelete)
+                    {"tablename": tablename,
+                     "fk": fk,
+                     "fieldname": fieldname,
+                     "reftable": reftable,
+                     "ondelete": ondelete,
+                     }
 
                 try:
                     executesql(sql)
@@ -844,7 +853,9 @@ class S3Migration(object):
             elif db_engine == "postgres":
                 # http://www.postgresql.org/docs/9.3/static/sql-altertable.html
                 sql = "ALTER TABLE %(tablename)s DROP CONSTRAINT %(tablename)s_%(fieldname)s_fkey;" % \
-                    dict(tablename=tablename, fieldname=fieldname)
+                    {"tablename": tablename,
+                     "fieldname": fieldname,
+                     }
 
                 try:
                     executesql(sql)
@@ -854,7 +865,11 @@ class S3Migration(object):
                     sys.stderr.write("%s\n" % sys.exc_info()[1])
 
                 sql = "ALTER TABLE %(tablename)s ADD CONSTRAINT %(tablename)s_%(fieldname)s_fkey FOREIGN KEY (%(fieldname)s) REFERENCES %(reftable)s(id) ON DELETE %(ondelete)s;" % \
-                    dict(tablename=tablename, fieldname=fieldname, reftable=reftable, ondelete=ondelete)
+                    {"tablename": tablename,
+                     "fieldname": fieldname,
+                     "reftable": reftable,
+                     "ondelete": ondelete,
+                     }
 
                 try:
                     executesql(sql)
@@ -897,12 +912,16 @@ class S3Migration(object):
                 if "`" in fk:
                     fk = fk.split("`")[0]
                 sql = "ALTER TABLE `%(tablename)s` DROP FOREIGN KEY `%(fk)s`;" % \
-                    dict(tablename=tablename, fk=fk)
+                    {"tablename": tablename,
+                     "fk": fk,
+                     }
 
             elif db_engine == "postgres":
                 # http://www.postgresql.org/docs/9.3/static/sql-altertable.html
                 sql = "ALTER TABLE %(tablename)s DROP CONSTRAINT %(tablename)s_%(fieldname)s_fkey;" % \
-                    dict(tablename=tablename, fieldname=fieldname)
+                    {"tablename": tablename,
+                     "fieldname": fieldname,
+                     }
 
             try:
                 executesql(sql)
@@ -932,7 +951,9 @@ class S3Migration(object):
         elif db_engine == "postgres":
             # http://www.postgresql.org/docs/9.3/static/sql-altertable.html
             sql = "ALTER TABLE %(tablename)s ALTER COLUMN %(fieldname)s DROP NOT NULL;" % \
-                dict(tablename=tablename, fieldname=fieldname)
+                {"tablename": tablename,
+                 "fieldname": fieldname,
+                 }
 
         try:
             db.executesql(sql)
@@ -971,12 +992,16 @@ class S3Migration(object):
         elif db_engine == "mysql":
             # http://dev.mysql.com/doc/refman/5.1/en/alter-table.html
             sql = "ALTER TABLE `%(tablename)s` DROP INDEX `%(fieldname)s`;" % \
-                dict(tablename=tablename, fieldname=fieldname)
+                {"tablename": tablename,
+                 "fieldname": fieldname,
+                 }
 
         elif db_engine == "postgres":
             # http://www.postgresql.org/docs/9.3/static/sql-altertable.html
             sql = "ALTER TABLE %(tablename)s DROP CONSTRAINT %(tablename)s_%(fieldname)s_key;" % \
-                dict(tablename=tablename, fieldname=fieldname)
+                {"tablename": tablename,
+                 "fieldname": fieldname,
+                 }
 
         try:
             db.executesql(sql)
@@ -1038,7 +1063,7 @@ class S3Migration(object):
 
         elif db_engine == "mysql":
             field = db[tablename][fieldname_old]
-            sql_type = map_type_web2py_to_sql(field.type)
+            sql_type = self.map_type_web2py_to_sql(field.type)
             sql = "ALTER TABLE %s CHANGE %s %s %s(%s)" % (tablename,
                                                           fieldname_old,
                                                           fieldname_new,
@@ -1118,6 +1143,7 @@ class S3Migration(object):
         self.update_field_by_mapping(db, tablename, field_to_update, mapping_function)
 
     # -------------------------------------------------------------------------
+    @staticmethod
     def update_field_by_mapping(db,
                                 tablename,
                                 field_to_update,
@@ -1196,7 +1222,7 @@ class S3Migration(object):
         new_field = Field(new_list_field, new_field_type)
         new_id_field = Field("%s_%s" % (tablename_old, table_old_id_field),
                              "reference %s" % tablename_old)
-        db.define_table(tablename,
+        db.define_table(tablename_new,
                         new_id_field,
                         new_field)
 
@@ -1218,6 +1244,8 @@ class S3Migration(object):
             @param table_old_id_field : name of the id field in the original table
             @param tablename_old      : name of the original table
         """
+
+        db = current.db
 
         update_dict = {}
         table_old = db[tablename_old]
@@ -1251,8 +1279,9 @@ class S3Migration(object):
         field_new = Field(fieldname_new)
         for attribute in attributes_to_copy:
             exec_str = "field_new.%(attribute)s = table[fieldname_old].%(attribute)s" % \
-                dict(attribute=attribute)
-            exec exec_str in globals(), locals()
+                {"attribute": attribute,
+                 }
+            exec(exec_str, globals(), locals())
         db.define_table(tablename,
                         table, # Table to inherit from
                         field_new,

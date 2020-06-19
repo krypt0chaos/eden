@@ -5,7 +5,6 @@
 """
 
 module = request.controller
-resourcename = request.function
 
 if not settings.has_module(module):
     raise HTTP(404, body="Module disabled: %s" % module)
@@ -25,7 +24,7 @@ def index_alt():
         # Just redirect to list of current cases
         s3_redirect_default(URL(f="person", vars={"closed": "0"}))
 
-    return {"module_name": settings.modules["br"].name_nice}
+    return {"module_name": settings.modules["br"].get("name_nice")}
 
 # =============================================================================
 # Case File and Component Tabs
@@ -479,7 +478,9 @@ def person():
         return output
     s3.postp = postp
 
-    output = s3_rest_controller("pr", "person", rheader=s3db.br_rheader)
+    output = s3_rest_controller("pr", "person",
+                                rheader = s3db.br_rheader,
+                                )
     return output
 
 # -----------------------------------------------------------------------------
@@ -566,7 +567,7 @@ def group_membership():
                                  person_id = record_id,
                                  group_head = True,
                                  )
-                    group_ids = set((group_id,))
+                    group_ids = {group_id}
                 resource.add_filter(FS("person_id") != record_id)
             else:
                 group_ids = set()

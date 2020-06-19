@@ -7,7 +7,7 @@
     @requires: U{B{I{gluon}} <http://web2py.com>}
     @requires: U{B{I{lxml}} <http://codespeak.net/lxml>}
 
-    @copyright: 2009-2019 (c) Sahana Software Foundation
+    @copyright: 2009-2020 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -32,12 +32,10 @@
     OTHER DEALINGS IN THE SOFTWARE.
 """
 
-#import datetime
 import json
 import os
 import re
 import sys
-import urllib2
 
 try:
     from lxml import etree
@@ -48,6 +46,7 @@ except ImportError:
 from gluon import current, HTTP, URL, IS_EMPTY_OR
 from gluon.storage import Storage
 
+from s3compat import INTEGER_TYPES, PY2, basestring, long, urlopen, urlparse, xrange
 from .s3codec import S3Codec
 from .s3datetime import s3_decode_iso_datetime, s3_encode_iso_datetime, s3_utc
 from .s3fields import S3RepresentLazy
@@ -226,7 +225,7 @@ class S3XML(S3Codec):
         self.error = None
         if isinstance(source, basestring) and source[:5] == "https":
             try:
-                source = urllib2.urlopen(source)
+                source = urlopen(source)
             except:
                 self.error = "XML Source error: %s" % sys.exc_info()[1]
                 return None
@@ -340,22 +339,27 @@ class S3XML(S3Codec):
             @param tree: the element tree
             @param xml_declaration: add an XML declaration to the output
             @param pretty_print: provide pretty formatted output
+
+            @returns: the XML as str
         """
 
-        return etree.tostring(tree,
-                              xml_declaration=xml_declaration,
-                              encoding="utf-8",
-                              pretty_print=pretty_print)
+        string = etree.tostring(tree,
+                                xml_declaration = xml_declaration,
+                                encoding = "utf-8",
+                                pretty_print = pretty_print,
+                                )
+
+        return string
 
     # -------------------------------------------------------------------------
     def tree(self, elements,
-             root=None,
-             domain=None,
-             url=None,
-             start=None,
-             limit=None,
-             results=None,
-             maxbounds=False):
+             root = None,
+             domain = None,
+             url = None,
+             start = None,
+             limit = None,
+             results = None,
+             maxbounds = False):
         """
             Builds a S3XML tree from a list of elements
 
@@ -652,7 +656,7 @@ class S3XML(S3Codec):
                     if krecords:
                         uids = [r[UID] for r in krecords if r[UID]]
                         if ktablename != gtablename:
-                            uids = map(export_uid, uids)
+                            uids = [export_uid(uid) for uid in uids]
                     else:
                         continue
                 else:
@@ -728,19 +732,12 @@ class S3XML(S3Codec):
             attr[RESOURCE] = r.table
 
             if show_ids:
-                if r.multiple:
-                    ids = str(as_json(r.id))
-                else:
-                    ids = str(r.id[0])
+                ids = str(as_json(r.id)) if r.multiple else str(r.id[0])
                 attr[ID] = ids
 
             if r.uid:
-
-                if r.multiple:
-                    uids = str(as_json(r.uid))
-                else:
-                    uids = str(r.uid[0])
-                attr[UID] = uids.decode("utf-8")
+                uids = as_json(r.uid) if r.multiple else r.uid[0]
+                attr[UID] = s3_unicode(uids)
 
                 # Render representation
                 if r.lazy is not None:
@@ -776,7 +773,7 @@ class S3XML(S3Codec):
                     locations[location_id].append(reference)
         if locations:
             ltable = current.s3db.gis_location
-            rows = current.db(ltable._id.belongs(locations.keys())) \
+            rows = current.db(ltable._id.belongs(set(locations.keys()))) \
                              .select(ltable.id,
                                      ltable.lat,
                                      ltable.lon,
@@ -798,7 +795,7 @@ class S3XML(S3Codec):
                    resource,
                    record,
                    element,
-                   location_data=None,
+                   location_data = None,
                    ):
         """
             GIS-encodes the master resource so that it can be transformed into
@@ -897,7 +894,7 @@ class S3XML(S3Codec):
                         # NB Ensure we don't double-encode unicode!
                         _attr = json.dumps(attrs, separators=(",,", "::"),
                                            ensure_ascii=False)
-                        attr[ATTRIBUTE.attributes] = "{%s}" % _attr.replace('"', "||")
+                        attr[ATTRIBUTE.attributes] = "{%s}" % s3_unicode(_attr).replace('"', "||")
 
                 if tablename in markers:
                     _markers = markers[tablename]
@@ -1124,12 +1121,12 @@ class S3XML(S3Codec):
                  parent,
                  table,
                  record,
-                 alias=None,
-                 fields=None,
-                 url=None,
-                 lazy=None,
-                 llrepr=None,
-                 postprocess=None):
+                 alias = None,
+                 fields = None,
+                 url = None,
+                 lazy = None,
+                 llrepr = None,
+                 postprocess = None):
         """
             Creates a <resource> element from a record
 
@@ -1182,7 +1179,7 @@ class S3XML(S3Codec):
         # UID
         if UID in table.fields and UID in record:
             uid = record[UID]
-            uid = str(table[UID].formatter(uid)).decode("utf-8")
+            uid = s3_unicode(table[UID].formatter(uid))
             if tablename != auth_group:
                 attrib[UID] = self.export_uid(uid)
             else:
@@ -1236,9 +1233,9 @@ class S3XML(S3Codec):
             value = None
 
             if fieldtype in ("datetime", "date", "time"):
-                value = s3_encode_iso_datetime(v).decode("utf-8")
+                value = s3_unicode(s3_encode_iso_datetime(v))
             elif fieldtype[:7] == "decimal":
-                value = str(formatter(v)).decode("utf-8")
+                value = s3_unicode(formatter(v))
 
             # Get the representation
             is_lazy = False
@@ -1312,7 +1309,7 @@ class S3XML(S3Codec):
                 attr[FIELD] = f
                 if represent or fieldtype not in ("string", "text"):
                     if value is None:
-                        value = to_json(v).decode("utf-8")
+                        value = s3_unicode(to_json(v))
                     attr[VALUE] = value
                 if is_lazy:
                     lazy.append((text, data, None, None))
@@ -1400,10 +1397,10 @@ class S3XML(S3Codec):
     def record(cls,
                table,
                element,
-               original=None,
-               files=None,
-               skip=None,
-               postprocess=None):
+               original = None,
+               files = None,
+               skip = None,
+               postprocess = None):
         """
             Creates a record (Storage) from a <resource> element and validates
             it
@@ -1553,20 +1550,30 @@ class S3XML(S3Codec):
                     # Download file from network location
                     if not isinstance(download_url, str):
                         try:
-                            download_url = download_url.encode("utf-8")
+                            download_url = s3_str(download_url)
                         except UnicodeEncodeError:
                             continue
                     if not filename:
                         filename = download_url.split("?")[0] or "upload.bin"
+                    if download_url.find("://"):
+                        # Not a full URL, try prepending protocol
+                        download_url = "http://%s" % download_url
                     try:
-                        upload = urllib2.urlopen(download_url)
+                        upload = urlopen(download_url)
                     except IOError:
+                        continue
+                    except ValueError:
+                        # e.g. unknown url type
+                        error = sys.exc_info()[1]
+                        child.set(ERROR, s3_unicode("%s: %s" % (f, error)))
+                        child.set(VALUE, s3_unicode(v))
+                        valid = False
                         continue
 
                 if upload:
                     if not isinstance(filename, str):
                         try:
-                            filename = filename.encode("utf-8")
+                            filename = s3_str(filename)
                         except UnicodeEncodeError:
                             continue
                     field = table[f]
@@ -1588,7 +1595,8 @@ class S3XML(S3Codec):
                     skip_validation = True
                     decode_value = False
                 else:
-                    decode_value = not is_text
+                    # For string, text and json: use text-node as-is
+                    decode_value = not is_text and field_type != "json"
                     value = xml_decode(child.text)
             else:
                 decode_value = True
@@ -1621,7 +1629,7 @@ class S3XML(S3Codec):
                     if not isinstance(value, (basestring, list, tuple, bool)):
                         v = str(value)
                     elif isinstance(value, basestring):
-                        v = value.encode("utf-8")
+                        v = s3_str(value)
                     else:
                         v = value
                     filename = None
@@ -1675,9 +1683,9 @@ class S3XML(S3Codec):
     def get_field_options(cls,
                           table,
                           fieldname,
-                          parent=None,
-                          show_uids=False,
-                          hierarchy=False):
+                          parent = None,
+                          show_uids = False,
+                          hierarchy = False):
         """
             Get options of a field as <select>
 
@@ -1791,9 +1799,9 @@ class S3XML(S3Codec):
     # -------------------------------------------------------------------------
     def get_options(self,
                     table,
-                    fields=None,
-                    show_uids=False,
-                    hierarchy=False):
+                    fields = None,
+                    show_uids = False,
+                    hierarchy = False):
         """
             Get options of option fields in a table as <select>s
 
@@ -1812,8 +1820,8 @@ class S3XML(S3Codec):
                 # Single field: omit the outer <options> element
                 return self.get_field_options(table,
                                               fields[0],
-                                              show_uids=show_uids,
-                                              hierarchy=hierarchy,
+                                              show_uids = show_uids,
+                                              hierarchy = hierarchy,
                                               )
 
         options = etree.Element(self.TAG.options)
@@ -1824,19 +1832,19 @@ class S3XML(S3Codec):
             for f in table.fields:
                 if not fields or f in fields:
                     get_field_options(table, f,
-                                      parent=options,
-                                      show_uids=show_uids,
-                                      hierarchy=hierarchy,
+                                      parent = options,
+                                      show_uids = show_uids,
+                                      hierarchy = hierarchy,
                                       )
         return options
 
     # -------------------------------------------------------------------------
     def get_fields(self, prefix, name,
-                   parent=None,
-                   meta=False,
-                   options=False,
-                   references=False,
-                   labels=False):
+                   parent = None,
+                   meta = False,
+                   options = False,
+                   references = False,
+                   labels = False):
         """
             Get fields in a table as <fields> element
 
@@ -1910,11 +1918,11 @@ class S3XML(S3Codec):
 
     # -------------------------------------------------------------------------
     def get_struct(self, prefix, name,
-                   alias=None,
-                   parent=None,
-                   meta=False,
-                   options=True,
-                   references=False):
+                   alias = None,
+                   parent = None,
+                   meta = False,
+                   options = True,
+                   references = False):
         """
             Get the table structure as XML tree
 
@@ -1940,11 +1948,11 @@ class S3XML(S3Codec):
             if alias and alias != name:
                 e.set(self.ATTRIBUTE.alias, alias)
             self.get_fields(prefix, name,
-                            parent=e,
-                            meta=meta,
-                            options=options,
-                            references=references,
-                            labels=True)
+                            parent = e,
+                            meta = meta,
+                            options = options,
+                            references = references,
+                            labels = True)
             return e
         else:
             raise AttributeError("No table like %s" % tablename)
@@ -2234,9 +2242,10 @@ class S3XML(S3Codec):
                             represent = float_represent
                 obj[PREFIX.text] = represent
 
-            if len(obj) == 1 and obj.keys()[0] in \
-               (PREFIX.text, TAG.item, TAG.list):
-                obj = obj[obj.keys()[0]]
+            obj_key_list = list(obj.keys())
+            if len(obj_key_list) == 1 and \
+               obj_key_list[0] in (PREFIX.text, TAG.item, TAG.list):
+                obj = obj[obj_key_list[0]]
 
             return obj
 
@@ -2335,14 +2344,14 @@ class S3XML(S3Codec):
     # -------------------------------------------------------------------------
     @classmethod
     def xls2tree(cls, source,
-                 resourcename=None,
-                 extra_data=None,
-                 hashtags=None,
-                 sheet=None,
-                 rows=None,
-                 cols=None,
-                 fields=None,
-                 header_row=True):
+                 resourcename = None,
+                 extra_data = None,
+                 hashtags = None,
+                 sheet = None,
+                 rows = None,
+                 cols = None,
+                 fields = None,
+                 header_row = True):
         """
             Convert a table in an XLS (MS Excel) sheet into an ElementTree,
             consisting of <table name="format">, <row> and
@@ -2414,7 +2423,7 @@ class S3XML(S3Codec):
 
             # Find the sheet
             try:
-                if isinstance(sheet, (int, long)):
+                if isinstance(sheet, INTEGER_TYPES):
                     s = wb.sheet_by_index(sheet)
                 elif isinstance(sheet, basestring):
                     s = wb.sheet_by_name(sheet)
@@ -2575,11 +2584,11 @@ class S3XML(S3Codec):
     # -------------------------------------------------------------------------
     @classmethod
     def csv2tree(cls, source,
-                 resourcename=None,
-                 extra_data=None,
-                 hashtags=None,
-                 delimiter=",",
-                 quotechar='"'):
+                 resourcename = None,
+                 extra_data = None,
+                 hashtags = None,
+                 delimiter = ",",
+                 quotechar = '"'):
         """
             Convert a table-form CSV source into an element tree, consisting of
             <table name="format">, <row> and <col field="fieldname"> elements.
@@ -2641,14 +2650,16 @@ class S3XML(S3Codec):
             for line in source:
                 if e:
                     try:
-                        yield unicode(line, e, "strict").encode("utf-8")
+                        s = s3_unicode(line, e)
+                        yield s.encode("utf-8") if PY2 else s
                     except:
                         pass
                     else:
                         continue
                 for encoding in encodings:
                     try:
-                        yield unicode(line, encoding, "strict").encode("utf-8")
+                        s = s3_unicode(line, encoding)
+                        yield s.encode("utf-8") if PY2 else s
                     except:
                         continue
                     else:
@@ -2657,39 +2668,61 @@ class S3XML(S3Codec):
 
         hashtags = dict(hashtags) if hashtags else {}
 
-        try:
-            import StringIO
-            if not isinstance(source, StringIO.StringIO):
+        def read_from_csv(source):
+            try:
                 source = utf_8_encode(source)
-            reader = csv.DictReader(source,
-                                    delimiter=delimiter,
-                                    quotechar=quotechar)
-            ROW = TAG.row
-            for i, r in enumerate(reader):
-                # Skip empty rows
-                if not any(r.values()):
-                    continue
-                if i == 0:
-                    # Auto-detect hashtags
-                    items = dict((k, s3_unicode(v.strip()))
-                                 for k, v in r.items() if k and v and v.strip())
-                    if all(v[0] == "#" for v in items.values()):
-                        hashtags.update(items)
+                reader = csv.DictReader(source, delimiter=delimiter, quotechar=quotechar)
+                ROW = TAG.row
+                for i, r in enumerate(reader):
+                    # Skip empty rows
+                    if not any(r.values()):
                         continue
-                row = SubElement(root, ROW)
-                for k in r:
-                    if k:
-                        add_col(row, k, r[k], hashtags=hashtags)
-                if extra_data:
-                    for key in extra_data:
-                        if key not in r:
-                            add_col(row, key, extra_data[key], hashtags=hashtags)
-        except csv.Error:
-            e = sys.exc_info()[1]
-            raise HTTP(400, body=cls.json_message(False, 400, e))
+                    if i == 0:
+                        # Auto-detect hashtags
+                        items = {k: s3_unicode(v.strip())
+                                 for k, v in r.items() if k and v and v.strip()}
+                        if all(v[0] == "#" for v in items.values()):
+                            hashtags.update(items)
+                            continue
+                    row = SubElement(root, ROW)
+                    for k in r:
+                        if k:
+                            add_col(row, k, r[k], hashtags=hashtags)
+                    if extra_data:
+                        for key in extra_data:
+                            if key not in r:
+                                add_col(row, key, extra_data[key], hashtags=hashtags)
+            except csv.Error:
+                e = sys.exc_info()[1]
+                raise HTTP(400, body=cls.json_message(False, 400, e))
+
+
+        if PY2:
+            from StringIO import StringIO
+        else:
+            from io import StringIO
+        if not isinstance(source, StringIO):
+            try:
+                read_from_csv(source)
+            except UnicodeDecodeError:
+                e = sys.exc_info()[1]
+                try:
+                    fname, fmode = source.name, source.mode
+                except AttributeError:
+                    fname = fmode = None
+                if not PY2 and fname and fmode and "b" not in fmode:
+                    # Perhaps a file opened in text mode with wrong encoding,
+                    # => try to reopen in binary mode
+                    with open(fname, "rb") as bsource:
+                        read_from_csv(bsource)
+                else:
+                    raise HTTP(400, body=cls.json_message(False, 400, e))
+        else:
+            read_from_csv(source)
 
         # Use this to debug the source tree if needed:
-        #sys.stderr.write(cls.tostring(root, pretty_print=True))
+        #if source.name[-16:] == "organisation.csv":
+        #sys.stderr.write(cls.tostring(root, pretty_print=True).decode("utf-8"))
 
         return  etree.ElementTree(root)
 
@@ -2728,7 +2761,6 @@ class S3EntityResolver(etree.Resolver):
             return None
 
         else:
-            import urlparse
             p = urlparse.urlparse(system_url)
 
             if p.scheme in ("", "file"):
@@ -2808,15 +2840,13 @@ class S3XMLFormat(object):
                 match = items[tablename]
             else:
                 match = False
-                maxlen = 0
-                for tn, fields in items.iteritems():
+                maxlen = -1
+                for tn, fields in items.items():
                     if "*" in tn:
-                        m = re.match(tn.replace("*", ".*"), tablename)
-                        if not m:
-                            continue
-                        l = m.span()[-1]
-                        if l > maxlen:
+                        l = len(tn) - tn.count("*")
+                        if l > maxlen and re.match(tn.replace("*", ".*"), tablename):
                             match = fields
+                            maxlen = l
                 if match is False:
                     match = items.get(ANY, default)
             return match
@@ -2834,6 +2864,7 @@ class S3XMLFormat(object):
         else:
             include = list(select) if select else None
             exclude = []
+
         return (include, exclude)
 
     # -------------------------------------------------------------------------
@@ -2856,11 +2887,11 @@ class S3XMLFormat(object):
 
             fields = element.get("select", None)
             if fields is not None and fields != ALL:
-                fields = set([f.strip() for f in fields.split(",")])
+                fields = {f.strip() for f in fields.split(",")}
 
             exclude = element.get("exclude", None)
             if exclude is not None:
-                exclude = set([f.strip() for f in exclude.split(",")])
+                exclude = {f.strip() for f in exclude.split(",")}
 
             for table in tables:
                 tablename = table.strip()

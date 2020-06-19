@@ -29,12 +29,12 @@ def index_alt():
 def is_affiliated():
     """
         Check if User is affiliated to an Organisation
-        @ToDo: Move this elsewhere
+        @ToDo: Move this elsewhere, like s3aaa or s3db/org
     """
 
     if not auth.is_logged_in():
         return False
-    elif s3_has_role(ADMIN):
+    elif auth.s3_has_role("ADMIN"):
         return True
     else:
         table = auth.settings.table_user
@@ -201,7 +201,7 @@ def req_controller(template = False):
     def prep(r):
 
         table = r.table
-        s3.req_prep(r)
+        s3db.req_prep(r)
 
         #if len(settings.get_req_req_type()) == 1:
         #    # Remove type from list_fields
@@ -371,7 +371,7 @@ def req_controller(template = False):
                     # Get the default Facility for this user
                     #if settings.has_module("hrm"):
                     #    hrtable = s3db.hrm_human_resource
-                    #    query = (hrtable.person_id == s3_logged_in_person())
+                    #    query = (hrtable.person_id == auth.s3_logged_in_person())
                     #    site = db(query).select(hrtable.site_id,
                     #                            limitby=(0, 1)).first()
                     #    if site:
@@ -726,10 +726,10 @@ $.filterOptionsS3({
                             type = form_vars.type
                             if type == "1":
                                 # Stock: Open Tab for Items
-                                r.next = URL(args=[form_vars.id, "req_item"])
+                                r.next = URL(args = [form_vars.id, "req_item"])
                             elif type == "3":
                                 # People: Open tab for Skills
-                                r.next = URL(args=[form_vars.id, "req_skill"])
+                                r.next = URL(args = [form_vars.id, "req_skill"])
                     else:
                         s3_action_buttons(r, deletable =False)
                         # Add delete button for those records which are not completed
@@ -769,7 +769,7 @@ $.filterOptionsS3({
                         #rows = db(query).select(table.id)
                         #restrict = [str(row.id) for row in rows]
                         #s3.actions.append(
-                        #    {"label": s3_str(T("View Items")),
+                        ##    {"label": s3_str(T("View Items")),
                         #     "url": URL(c = "req",
                         #                f = "req",
                         #                args = ["[id]", "req_item"],
@@ -878,10 +878,10 @@ $.filterOptionsS3({
                     req_type = form_vars.type
                     if req_type == "1":
                         # Stock: Open Tab for Items
-                        r.next = URL(args=[form_vars.id, "req_item"])
+                        r.next = URL(args = [form_vars.id, "req_item"])
                     elif req_type == "3":
                         # People: Open tab for Skills
-                        r.next = URL(args=[form_vars.id, "req_skill"])
+                        r.next = URL(args = [form_vars.id, "req_skill"])
 
         return output
     s3.postp = postp

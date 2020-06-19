@@ -2,7 +2,7 @@
 
 """ Resource Summary Pages
 
-    @copyright: 2013-2019 (c) Sahana Software Foundation
+    @copyright: 2013-2020 (c) Sahana Software Foundation
     @license: MIT
 
     @requires: U{B{I{gluon}} <http://web2py.com>}
@@ -31,6 +31,7 @@
 
 from gluon import current, A, DIV, LI, UL
 
+from s3compat import basestring
 from .s3filter import S3FilterForm
 from .s3gis import MAP
 from .s3rest import S3Method

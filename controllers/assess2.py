@@ -18,10 +18,11 @@
 """
 
 module = request.controller
-resourcename = request.function
 
 if not settings.has_module(module):
     raise HTTP(404, body="Module disabled: %s" % module)
+
+resourcename = request.function
 
 # -----------------------------------------------------------------------------
 # Define the Model
@@ -92,7 +93,7 @@ def assess_tables():
                  organisation_id(widget = S3OrganisationAutocompleteWidget(default_from_profile=True)),
                  person_id("assessor_person_id",
                            label = T("Assessor"),
-                           default = s3_logged_in_person()),
+                           default = auth.s3_logged_in_person()),
                  s3_comments(),
                  ireport_id(),      # Assessment can be linked to an Incident Report
                  *s3_meta_fields())
@@ -1925,9 +1926,10 @@ def impact_tables():
 def index():
     """ Module's Home Page """
 
-    module_name = settings.modules[module].name_nice
+    module_name = settings.modules[module].get("name_nice")
     response.title = module_name
-    return dict(module_name=module_name)
+    return {"module_name": module_name,
+            }
 
 # -----------------------------------------------------------------------------
 def create():
@@ -2499,7 +2501,7 @@ def custom_assess(custom_assess_fields, location_id=None):
                                                           limitby=(0, 1)
                                                           ).first()
                     sector_id = row.sector_id
-                    if sector_id in sector_summary.keys():
+                    if sector_id in sector_summary:
                         sector_summary[sector_id].append(severity)
                     elif sector_id:
                         sector_summary[sector_id] = [severity]
@@ -2508,7 +2510,7 @@ def custom_assess(custom_assess_fields, location_id=None):
 
         # Add Cluster summaries
         # @ToDo: make sure that this doesn't happen if there are sectors in the assess
-        for sector_id in sector_summary.keys():
+        for sector_id in sector_summary:
             severity_values = sector_summary[sector_id]
             db.assess_summary.insert(assess_id = assess_id,
                                      sector_id = sector_id,

@@ -1,7 +1,7 @@
 /**
  * jQuery UI Widget for S3AddPersonWidget
  *
- * @copyright 2017-2019 (c) Sahana Software Foundation
+ * @copyright 2017-2020 (c) Sahana Software Foundation
  * @license MIT
  *
  * requires jQuery 1.9.1+
@@ -1294,10 +1294,12 @@
             $(fields.map(function(fieldName) {
                 return selector + '_' + fieldName;
             }).join(',')).on('change' + ns, function() {
-                self._readInputs();
-                self._serialize();
-                if (opts.lookupDuplicates) {
-                    self._checkDuplicates();
+                if (!self.data.id) {
+                    self._readInputs();
+                    self._serialize();
+                    if (opts.lookupDuplicates) {
+                        self._checkDuplicates();
+                    }
                 }
             });
 

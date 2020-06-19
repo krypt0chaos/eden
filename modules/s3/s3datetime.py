@@ -2,7 +2,7 @@
 
 """ S3 Date/Time Toolkit
 
-    @copyright: 2015-2019 (c) Sahana Software Foundation
+    @copyright: 2015-2020 (c) Sahana Software Foundation
     @license: MIT
 
     @requires: U{B{I{gluon}} <http://web2py.com>}
@@ -58,6 +58,8 @@ import re
 import time
 
 from gluon import current
+
+from s3compat import INTEGER_TYPES, basestring, xrange
 
 # =============================================================================
 # Constants
@@ -294,7 +296,7 @@ class S3DateTime(object):
         sign = 1
         offset_hrs = offset_min = 0
 
-        if isinstance(string, (int, long, float)):
+        if isinstance(string, INTEGER_TYPES + (float,)):
             offset_hrs = string
         elif isinstance(string, basestring):
             if string[:3] == "UTC":
@@ -1692,7 +1694,7 @@ class S3DefaultTZ(datetime.tzinfo):
 
     def __init__(self, offset=None):
 
-        super(S3DefaultTZ, self).__init__(self)
+        super(S3DefaultTZ, self).__init__()
 
         if offset:
             offset_sec = S3DateTime.get_offset_value(offset)
@@ -1783,7 +1785,7 @@ def s3_relative_datetime(dtexpr):
     then = now
     for m in RELATIVE.finditer(dtexpr):
 
-        (sign, value, unit) = m.group(1,2,3)
+        (sign, value, unit) = m.group(1, 2, 3)
 
         try:
             value = int(value)

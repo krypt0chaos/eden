@@ -1,13 +1,13 @@
 /**
  * jQuery UI pivottable Widget for S3Report
  *
- * @copyright 2013-2019 (c) Sahana Software Foundation
+ * @copyright 2013-2020 (c) Sahana Software Foundation
  * @license MIT
  *
  * requires jQuery 1.9.1+
  * requires jQuery UI 1.10 widget factory
  * requires D3.js 3.4.9+
- * requires NVD3.js
+ * requires NVD3.js 1.8.5 (patched)
  *
  */
 
@@ -1164,8 +1164,8 @@
 
                 var color = nv.utils.defaultColor()({}, item.index),
                     tooltip = '<div class="pt-tooltip">' +
-                              '<div class="pt-tooltip-label" style="color:' + color + '">' + series.key + '</div>' +
-                              '<div class="pt-tooltip-text">' + item.label + ': <span class="pt-tooltip-value">' + item.value + '</span></div>' +
+                               '<div class="pt-tooltip-label" style="color:' + color + '">' + series.key + '</div>' +
+                               '<div class="pt-tooltip-text">' + item.label + ': <span class="pt-tooltip-value">' + item.value + '</span></div>' +
                               '</div>';
                 return tooltip;
             };
