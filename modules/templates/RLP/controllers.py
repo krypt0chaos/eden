@@ -3,17 +3,21 @@
 import json
 from uuid import uuid4
 
-from gluon import A, BR, CRYPT, DIV, Field, H3, INPUT, \
-                  IS_EMPTY_OR,  IS_EXPR, IS_INT_IN_RANGE, IS_NOT_EMPTY, \
-                  P, SQLFORM, URL, XML, current, redirect
+from gluon import Field, SQLFORM, URL, XML, current, redirect, \
+                  CRYPT, IS_EMPTY_OR, IS_EXPR, IS_INT_IN_RANGE, IS_IN_SET, \
+                  IS_LENGTH, IS_NOT_EMPTY, \
+                  A, BR, DIV, H3, H4, I, INPUT, LI, UL, TAG
+
 from gluon.storage import Storage
 
-from s3 import IS_ONE_OF, JSONERRORS, S3CustomController, \
-               S3GroupedOptionsWidget, S3LocationSelector, S3MultiSelectWidget, \
-               S3Represent, s3_comments_widget, s3_date, s3_mark_required, \
-               s3_phone_requires, s3_str
+from s3 import IS_ONE_OF, IS_PHONE_NUMBER_MULTI, IS_PHONE_NUMBER_SINGLE, \
+               JSONERRORS, S3CustomController, S3GroupedOptionsWidget, \
+               S3LocationSelector, S3MultiSelectWidget, S3WeeklyHoursWidget, \
+               S3WithIntro, S3Represent, \
+               s3_comments_widget, s3_date, s3_mark_required, s3_str
 
 from .notifications import formatmap
+from .helpers import rlp_deployment_sites
 
 THEME = "RLP"
 
@@ -28,106 +32,138 @@ class index(S3CustomController):
         output = {}
 
         T = current.T
-        request = current.request
-        response = current.response
-        s3 = response.s3
+        s3 = current.response.s3
 
-        # Check logged in and permissions
         auth = current.auth
         settings = current.deployment_settings
-        roles = current.session.s3.roles
-        system_roles = auth.get_system_roles()
-        AUTHENTICATED = system_roles.AUTHENTICATED
 
-        # Login/Registration forms
-        self_registration = current.deployment_settings.get_security_registration_visible()
-        registered = False
+
+        # Defaults
         login_form = None
         login_div = None
-        register_form = None
-        register_div = None
+        announcements = None
+        announcements_title = None
 
-        if AUTHENTICATED not in roles:
+        roles = current.session.s3.roles
+        sr = auth.get_system_roles()
+        if sr.AUTHENTICATED in roles:
+            # Logged-in user
+            # => display announcements
 
-            login_buttons = DIV(A(T("Login"),
-                                  _id="show-login",
-                                  _class="tiny secondary button"),
-                                _id="login-buttons"
-                                )
-            script = '''
-$('#show-mailform').click(function(e){
- e.preventDefault()
- $('#intro').slideDown(400, function() {
-   $('#login_box').hide()
- });
-})
-$('#show-login').click(function(e){
- e.preventDefault()
- $('#login_form').show()
- $('#register_form').hide()
- $('#login_box').show()
- $('#intro').slideUp()
-})'''
-            s3.jquery_ready.append(script)
+            from s3 import S3DateTime
+            dtrepr = lambda dt: S3DateTime.datetime_represent(dt, utc=True)
 
-            # This user isn't yet logged-in
-            if "registered" in request.cookies:
-                # This browser has logged-in before
-                registered = True
+            filter_roles = roles if sr.ADMIN not in roles else None
+            posts = self.get_announcements(roles=filter_roles)
 
-            if self_registration is True:
-                # Provide a Registration box on front page
-                login_buttons.append(A(T("Register"),
-                                       _id="show-register",
-                                       _class="tiny secondary button",
-                                       _style="margin-left:5px"))
-                script = '''
-$('#show-register').click(function(e){
- e.preventDefault()
- $('#login_form').hide()
- $('#register_form').show()
- $('#login_box').show()
- $('#intro').slideUp()
-})'''
-                s3.jquery_ready.append(script)
+            # Render announcements list
+            announcements = UL(_class="announcements")
+            if posts:
+                announcements_title = T("Announcements")
+                priority_classes = {2: "announcement-important",
+                                    3: "announcement-critical",
+                                    }
+                priority_icons = {2: "fa-exclamation-circle",
+                                  3: "fa-exclamation-triangle",
+                                  }
+                for post in posts:
+                    # The header
+                    header = H4(post.name)
 
-                register_form = auth.register()
-                register_div = DIV(H3(T("Register")),
-                                   P(XML(T("If you would like to help, then please <b>sign up now</b>"))))
-                register_script = '''
-$('#register-btn').click(function(e){
- e.preventDefault()
- $('#register_form').show()
- $('#login_form').hide()
-})
-$('#login-btn').click(function(e){
- e.preventDefault()
- $('#register_form').hide()
- $('#login_form').show()
-})'''
-                s3.jquery_ready.append(register_script)
+                    # Priority
+                    priority = post.priority
+                    # Add icon to header?
+                    icon_class = priority_icons.get(post.priority)
+                    if icon_class:
+                        header = TAG[""](I(_class="fa %s announcement-icon" % icon_class),
+                                         header,
+                                         )
+                    # Priority class for the box
+                    prio = priority_classes.get(priority, "")
 
-            # Provide a login box on front page
+                    row = LI(DIV(DIV(DIV(dtrepr(post.date),
+                                        _class = "announcement-date",
+                                        ),
+                                    _class="fright",
+                                    ),
+                                 DIV(DIV(header,
+                                         _class = "announcement-header",
+                                         ),
+                                     DIV(XML(post.body),
+                                         _class = "announcement-body",
+                                         ),
+                                     _class="announcement-text",
+                                    ),
+                                 _class = "announcement-box %s" % prio,
+                                 ),
+                             )
+                    announcements.append(row)
+        else:
+            # Anonymous user
+            # => provide a login box
+            login_div = DIV(H3(T("Login")),
+                            )
             auth.messages.submit_button = T("Login")
             login_form = auth.login(inline=True)
-            login_div = DIV(H3(T("Login")),
-                            #P(XML(T("Registered users can <b>login</b> to access the system"))),
-                            )
-        else:
-            login_buttons = ""
 
-        output["login_buttons"] = login_buttons
-        output["self_registration"] = self_registration
-        output["registered"] = registered
-        output["login_div"] = login_div
-        output["login_form"] = login_form
-        output["register_div"] = register_div
-        output["register_form"] = register_form
+        output = {"login_div": login_div,
+                  "login_form": login_form,
+                  "announcements": announcements,
+                  "announcements_title": announcements_title,
+                  }
 
+        # Custom view and homepage styles
         s3.stylesheets.append("../themes/%s/homepage.css" % THEME)
         self._view(settings.get_theme_layouts(), "index.html")
 
         return output
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def get_announcements(roles=None):
+        """
+            Get current announcements
+
+            @param roles: filter announcement by these roles
+
+            @returns: any announcements (Rows)
+        """
+
+        db = current.db
+        s3db = current.s3db
+
+        # Look up all announcements
+        ptable = s3db.cms_post
+        stable = s3db.cms_series
+        join = stable.on((stable.id == ptable.series_id) & \
+                         (stable.name == "Announcements") & \
+                         (stable.deleted == False))
+        query = (ptable.date <= current.request.utcnow) & \
+                (ptable.expired == False) & \
+                (ptable.deleted == False)
+
+        if roles:
+            # Filter posts by roles
+            ltable = s3db.cms_post_role
+            q = (ltable.group_id.belongs(roles)) & \
+                (ltable.deleted == False)
+            rows = db(q).select(ltable.post_id,
+                                cache = s3db.cache,
+                                groupby = ltable.post_id,
+                                )
+            post_ids = {row.post_id for row in rows}
+            query = (ptable.id.belongs(post_ids)) & query
+
+        posts = db(query).select(ptable.name,
+                                 ptable.body,
+                                 ptable.date,
+                                 ptable.priority,
+                                 join = join,
+                                 orderby = (~ptable.priority, ~ptable.date),
+                                 limitby = (0, 5),
+                                 )
+
+        return posts
 
 # =============================================================================
 class privacy(S3CustomController):
@@ -275,6 +311,26 @@ class register(S3CustomController):
         # Page title and intro text
         title = T("Volunteer Registration")
 
+        # Get intro text from CMS
+        db = current.db
+        s3db = current.s3db
+
+        ctable = s3db.cms_post
+        ltable = s3db.cms_post_module
+        join = ltable.on((ltable.post_id == ctable.id) & \
+                        (ltable.module == "auth") & \
+                        (ltable.resource == "user") & \
+                        (ltable.deleted == False))
+
+        query = (ctable.name == "SelfRegistrationIntro") & \
+                (ctable.deleted == False)
+        row = db(query).select(ctable.body,
+                                join = join,
+                                cache = s3db.cache,
+                                limitby = (0, 1),
+                                ).first()
+        intro = row.body if row else None
+
         # Form Fields
         formfields, required_fields, subheadings = self.formfields()
 
@@ -372,6 +428,9 @@ class register(S3CustomController):
                       #"start_date": formvars.start_date,
                       #"end_date": formvars.end_date,
                       "hours_per_week": formvars.hours_per_week,
+                      "schedule_json": formvars.schedule_json,
+                      "availability_sites": formvars.availability_sites,
+                      "availability_comments": formvars.availability_comments,
                       "skill_id": formvars.skill_id,
                       "comments": formvars.comments,
                       }
@@ -458,6 +517,7 @@ class register(S3CustomController):
         self._view(THEME, "register.html")
 
         return {"title": title,
+                "intro": intro,
                 "form": form,
                 }
 
@@ -504,7 +564,7 @@ class register(S3CustomController):
                       utable.last_name,
                       s3_date("date_of_birth",
                               label = T("Date of Birth"),
-                              future = -96,
+                              future = -156,
                               empty = False,
                               ),
                       # --------------------------------------------
@@ -527,19 +587,21 @@ class register(S3CustomController):
                       # --------------------------------------------
                       Field("home_phone",
                             label = T("Phone"),
-                            requires = IS_EMPTY_OR(s3_phone_requires),
+                            requires = IS_EMPTY_OR(IS_PHONE_NUMBER_MULTI()),
                             ),
                       Field("mobile_phone",
                             label = T("Mobile Phone"),
-                            requires = IS_EMPTY_OR(s3_phone_requires),
+                            requires = IS_EMPTY_OR(IS_PHONE_NUMBER_SINGLE()),
                             ),
                       #Field("office_phone",
                       #      label = T("Office Phone"),
-                      #      requires = IS_EMPTY_OR(s3_phone_requires),
+                      #      requires = IS_EMPTY_OR(IS_PHONE_NUMBER_MULTI()),
                       #      ),
                       # --------------------------------------------
                       s3db.gis_location_id("location_id",
                                            widget = S3LocationSelector(
+                                                       levels = ("L1", "L2", "L3"),
+                                                       required_levels = ("L1", "L2", "L3"),
                                                        show_address = False,
                                                        show_postcode = False,
                                                        show_map = False,
@@ -574,9 +636,10 @@ class register(S3CustomController):
                             label = T("Occupation / Speciality"),
                             comment = DIV(_class = "tooltip",
                                           _title = "%s|%s" % (T("Occupation / Speciality"),
-                                                              T("Specify your exact job designation"),
+                                                              T("Specify your exact job designation (max 128 characters)"),
                                                               ),
                                           ),
+                            requires = IS_EMPTY_OR(IS_LENGTH(128)),
                             ),
 
                       # --------------------------------------------
@@ -599,6 +662,41 @@ class register(S3CustomController):
                                                               T("Specify the maximum number of weekly hours"),
                                                               ),
                                           ),
+                            ),
+                      Field("schedule_json", "json",
+                            label = T("Availability Schedule"),
+                            widget = S3WithIntro(
+                                        S3WeeklyHoursWidget(),
+                                        # Widget intro from CMS
+                                        intro = ("pr",
+                                                 "person_availability",
+                                                 "HoursMatrixIntro",
+                                                 ),
+                                        ),
+                            ),
+                      Field("availability_sites", "list:integer",
+                            label = T("Possible Deployment Sites"),
+                            requires = IS_EMPTY_OR(IS_IN_SET(rlp_deployment_sites(),
+                                                             multiple = True,
+                                                             sort = False,
+                                                             )),
+                            widget = S3WithIntro(
+                                        S3MultiSelectWidget(),
+                                        # Widget intro from CMS
+                                        intro = ("pr",
+                                                 "person_availability_site",
+                                                 "AvailabilitySitesIntro",
+                                                 ),
+                                        ),
+                            ),
+                      Field("availability_comments", "text",
+                            label = T("Availability Comments"),
+                            widget = s3_comments_widget,
+                            comment = DIV(_class = "tooltip",
+                                          _title = "%s|%s" % (T("Availability Comments"),
+                                                              T("Use this field to indicate e.g. vacation dates or other information with regard to your availability to facilitate personnel planning"),
+                                                              ),
+                                         ),
                             ),
                       s3db.hrm_multi_skill_id(
                             label = T("Skills / Resources"),
@@ -633,9 +731,19 @@ class register(S3CustomController):
                        (8, T("Address")),
                        (11, T("Occupation")),
                        (13, T("Availability and Resources")),
-                       (17, T("Comments")),
-                       (18, T("Privacy")),
+                       (20, T("Comments")),
+                       (21, T("Privacy")),
                        )
+
+        # Geocoder
+        # @ToDo: Either move Address into LocationSelector or make a variant of geocoder.js to match these IDs
+        #s3 = current.response.s3
+        #s3.scripts.append("/%s/static/themes/RLP/js/geocoder.js" % request.application)
+        #s3.jquery_ready.append('''S3.rlp_GeoCoder("pr_address_location_id")''')
+        #s3.js_global.append('''i18n.location_found="%s"
+#i18n.location_not_found="%s"''' % (T("Location Found"),
+        #                           T("Location NOT Found"),
+        #                           ))
 
         return formfields, required_fields, subheadings
 
@@ -870,25 +978,47 @@ class register(S3CustomController):
 
         # Register availability
         hours_per_week = custom.get("hours_per_week")
-        if hours_per_week:
-            atable = s3db.pr_person_availability
-            query = (atable.person_id == person_id) & \
-                    (atable.deleted == False)
-            availability = db(query).select(atable.id,
-                                            atable.person_id,
-                                            atable.hours_per_week,
-                                            limitby = (0, 1),
-                                            ).first()
-            if availability:
-                availability.update_record(hours_per_week = hours_per_week)
-                s3db_onaccept(atable, availability, method="update")
-            else:
-                availability = {"person_id": person_id,
-                                "hours_per_week": hours_per_week,
-                                }
-                availability["id"] = atable.insert(**availability)
-                set_record_owner(atable, availability, owned_by_user=user_id)
-                s3db_onaccept(atable, availability, method="create")
+        schedule_json = custom.get("schedule_json")
+        availability_comments = custom.get("availability_comments")
+
+        atable = s3db.pr_person_availability
+        query = (atable.person_id == person_id) & \
+                (atable.deleted == False)
+        availability = db(query).select(atable.id,
+                                        limitby = (0, 1),
+                                        ).first()
+        if availability:
+            availability.update_record(hours_per_week = hours_per_week,
+                                       schedule_json = schedule_json,
+                                       comments = availability_comments,
+                                       owned_by_user = user_id,
+                                       )
+            s3db_onaccept(atable, availability, method="update")
+        else:
+            availability = {"person_id": person_id,
+                            "hours_per_week": hours_per_week,
+                            "schedule_json": schedule_json,
+                            "comments": availability_comments,
+                            }
+            availability["id"] = atable.insert(**availability)
+            set_record_owner(atable, availability, owned_by_user=user_id)
+            s3db_onaccept(atable, availability, method="create")
+
+        # Link to availability sites
+        sites = custom.get("availability_sites")
+        ltable = s3db.pr_person_availability_site
+        if isinstance(sites, list):
+            query = (ltable.person_id == person_id) & \
+                    (ltable.deleted == False)
+            for site_id in set(sites):
+                q = (ltable.site_id == site_id) & query
+                if not db(q).select(ltable.id, limitby = (0, 1)).first():
+                    data = {"person_id": person_id,
+                            "site_id": site_id,
+                            }
+                    data["id"] = ltable.insert(**data)
+                    set_record_owner(ltable, data, owned_by_user=user_id)
+                    s3db_onaccept(ltable, data, method="create")
 
         # Register skills
         skills = custom.get("skill_id")
@@ -937,7 +1067,10 @@ class register(S3CustomController):
             s3db_onaccept(htable, volunteer_update, method="update")
 
             # Add to default pool
-            default_pool = cls.get_default_pool()
+            from .poolrules import PoolRules
+            default_pool = PoolRules()(person_id)
+            if not default_pool:
+                default_pool = cls.get_default_pool()
             if default_pool:
                 gtable = s3db.pr_group
                 mtable = s3db.pr_group_membership
@@ -1177,5 +1310,34 @@ class verify_email(S3CustomController):
                                          )
         if not success:
             current.response.error = auth_messages.unable_send_email
+
+# =============================================================================
+class geocode(S3CustomController):
+    """
+        Custom Geocoder
+        - looks up Lat/Lon from Postcode &/or Address
+        - looks up Lx from Lat/Lon
+    """
+
+    def __call__(self):
+
+        gis = current.gis
+
+        post_vars_get = current.request.post_vars.get
+        postcode = post_vars_get("postcode")
+        address = post_vars_get("address")
+        if address:
+            full_address = "%s %s" %(postcode, address)
+        else:
+            full_address = postcode
+
+        latlon = gis.geocode(full_address)
+        if not isinstance(latlon, dict):
+            return None
+
+        results = gis.geocode_r(latlon["lat"], latlon["lon"])
+
+        current.response.headers["Content-Type"] = "application/json"
+        return json.dumps(results)
 
 # END =========================================================================

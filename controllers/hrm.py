@@ -395,13 +395,15 @@ def job_title():
             current.messages["NONE"] = ""
             table = s3db.hrm_job_title
             table.organisation_id.represent = \
-                s3db.org_OrganisationRepresent(acronym=False,
-                                               parent=False)
+                s3db.org_OrganisationRepresent(acronym = False,
+                                               parent = False)
             table.organisation_id.label = None
             table.type.label = None
             table.comments.label = None
             table.comments.represent = lambda v: v or ""
-        elif r.get_vars.get("caller") in ("event_human_resource_job_title_id", "event_scenario_human_resource_job_title_id"):
+        elif r.get_vars.get("caller") in ("event_human_resource_job_title_id",
+                                          "event_scenario_human_resource_job_title_id",
+                                          ):
             # Default / Hide type
             f = s3db.hrm_job_title.type
             f.default = 4 # Deployment
@@ -409,7 +411,12 @@ def job_title():
         return True
     s3.prep = prep
 
-    s3.filter = FS("type").belongs((1, 3))
+    if settings.get_hrm_mix_staff():
+        # Only show non-Deployment Job Titles
+        s3.filter = FS("type").belongs((1, 2, 3))
+    else:
+        # Only show Job Titles for Staff (or Both)
+        s3.filter = FS("type").belongs((1, 3))
 
     if not auth.s3_has_role("ADMIN"):
         s3.filter &= auth.filter_by_root_org(s3db.hrm_job_title)
@@ -831,6 +838,30 @@ def shift_template():
 # =============================================================================
 def delegation():
     """ Delegations: RESTful CRUD controller """
+
+    def prep(r):
+
+        resource = r.resource
+        table = resource.table
+
+        get_vars = r.get_vars
+        if "viewing" in get_vars:
+            try:
+                vtablename, record_id = get_vars["viewing"].split(".")
+            except ValueError:
+                return False
+            if vtablename == "pr_person":
+                resource.add_filter(FS("person_id") == record_id)
+                field = table.person_id
+                field.default = record_id
+                field.readable = field.writable = False
+            elif vtablename == "org_organisation":
+                resource.add_filter(FS("organisation_id") == record_id)
+                field = table.organisation_id
+                field.default = record_id
+                field.readable = field.writable = False
+        return True
+    s3.prep = prep
 
     return s3_rest_controller()
 

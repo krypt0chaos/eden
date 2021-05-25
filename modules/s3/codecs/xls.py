@@ -3,7 +3,7 @@
 """
     S3 Microsoft Excel codec
 
-    @copyright: 2011-2020 (c) Sahana Software Foundation
+    @copyright: 2011-2021 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -190,13 +190,14 @@ class S3XLS(S3Codec):
         COL_WIDTH_MULTIPLIER = self.COL_WIDTH_MULTIPLIER
 
         # Get the attributes
-        title = attr.get("title")
+        attr_get = attr.get
+        title = attr_get("title")
         if title is None:
             title = current.T("Report")
-        list_fields = attr.get("list_fields")
-        group = attr.get("dt_group")
-        use_colour = attr.get("use_colour", False)
-        evenodd = attr.get("evenodd", True)
+        list_fields = attr_get("list_fields")
+        group = attr_get("dt_group")
+        use_colour = attr_get("use_colour", False)
+        evenodd = attr_get("evenodd", True)
 
         # Extract the data from the resource
         if isinstance(resource, dict):
@@ -259,11 +260,11 @@ List Fields %s""" % (request.url, len(lfields), len(rows[0]), headers, lfields)
         row_limit = 65536
         sheetnum = len(rows) / row_limit
         # Can't have a / in the sheet_name, so replace any with a space
-        sheet_name = str(title.replace("/", " "))
-        if len(sheet_name) > 31:
+        sheet_name = s3_str(title.replace("/", " "))
+        if len(sheet_name) > 28:
             # Sheet name cannot be over 31 chars
             # (take sheet number suffix into account)
-            sheet_name = sheet_name[:31] if sheetnum == 1 else sheet_name[:28]
+            sheet_name = sheet_name[:28]
         count = 1
         while len(sheets) <= sheetnum:
             sheets.append(book.add_sheet("%s-%s" % (sheet_name, count)))
@@ -517,7 +518,7 @@ List Fields %s""" % (request.url, len(lfields), len(rows[0]), headers, lfields)
         book.save(output)
         output.seek(0)
 
-        if attr.get("as_stream", False):
+        if attr_get("as_stream", False):
             return output
 
         # Response headers

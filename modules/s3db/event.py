@@ -2,7 +2,7 @@
 
 """ Sahana Eden Event Model
 
-    @copyright: 2009-2020 (c) Sahana Software Foundation
+    @copyright: 2009-2021 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -2599,7 +2599,8 @@ class S3IncidentLogModel(S3Model):
                           s3_comments(),
                           *s3_meta_fields(),
                           on_define = lambda table: \
-                            [table.created_by.set_attributes(represent = s3_auth_user_represent_name),
+                            [table.created_by.set_attributes(represent = self.auth_UserRepresent(show_email = False,
+                                                                                                 show_link = False)),
                              table.created_on.set_attributes(represent = lambda dt: \
                                                              S3DateTime.datetime_represent(dt, utc=True)),
                              ]

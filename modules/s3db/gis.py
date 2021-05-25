@@ -2,7 +2,7 @@
 
 """ Sahana Eden GIS Model
 
-    @copyright: 2009-2020 (c) Sahana Software Foundation
+    @copyright: 2009-2021 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -321,7 +321,6 @@ class S3LocationModel(S3Model):
                                       widget = S3LocationSelector(show_address = True,
                                                                   ),
                                       # Alternate simple Autocomplete (e.g. used by pr_person_presence)
-                                      #requires = IS_EMPTY_OR(IS_LOCATION()),
                                       #widget = S3LocationAutocompleteWidget(),
                                       )
 
@@ -3609,14 +3608,19 @@ class S3MapModel(S3Model):
         # ---------------------------------------------------------------------
         # OpenWeatherMap
         #
-        openweathermap_layer_types = ("station", "city")
+        openweathermap_layer_types = ("clouds_new",
+                                      "precipitation_new",
+                                      "pressure_new",
+                                      "temp_new",
+                                      "wind_new",
+                                      )
 
         tablename = "gis_layer_openweathermap"
         define_table(tablename,
                      layer_id(),
                      name_field()(),
                      desc_field()(),
-                     Field("type", length=16,
+                     Field("type", length=24,
                            label = TYPE,
                            requires = IS_IN_SET(openweathermap_layer_types),
                            ),
@@ -4360,7 +4364,7 @@ class S3MapModel(S3Model):
                     if geom_type == wkbPoint:
                         lon = geom.GetX()
                         lat = geom.GetY()
-                        wkt = "POINT(%f %f)" % (lon, lat)
+                        wkt = "POINT (%f %f)" % (lon, lat)
                     else:
                         wkt = geom.ExportToWkt()
                         centroid = geom.Centroid()

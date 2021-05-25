@@ -1,7 +1,7 @@
 /**
  * jQuery UI LocationSelector Widget
  *
- * @copyright 2015-2020 (c) Sahana Software Foundation
+ * @copyright 2015-2021 (c) Sahana Software Foundation
  * @license MIT
  *
  * requires jQuery 1.9.1+
@@ -124,11 +124,19 @@
             var selector = '#' + this.fieldname,
                 opts = this.options;
 
-            // Should we use the Geocoder?
+            // Should we use a Geocoder?
             if ($(selector + '_geocode button').length) {
                 this.useGeocoder = true;
             } else {
                 this.useGeocoder = false;
+            }
+
+            // Should we use a Postcode to Address lookup?
+            var formkey = $(selector + '_postcode').data('k');
+            if (formkey) {
+                this.postcodeToAddress = formkey;
+            } else {
+                this.postcodeToAddress = false;
             }
 
             // Populate L0 selector (if present)
@@ -159,53 +167,74 @@
                     option = '<option value="' + locationID + '">' + location.n + '</option>';
                     dropdown.append(option);
                 }
-                // Show the L0 row
-                row.removeClass('hide').show();
-                // Handle separate label row in tuple themes
-                var labelRow = $(selector + '_L0__row1');
-                if (labelRow.length) {
-                    labelRow.removeClass('hide').show();
+                if (!this.postcodeToAddress) {
+                    // Show the L0 row
+                    row.removeClass('hide').show();
+                    // Handle separate label row in tuple themes
+                    var labelRow = $(selector + '_L0__row1');
+                    if (labelRow.length) {
+                        labelRow.removeClass('hide').show();
+                    }
                 }
             }
 
+            // Hide Lx if using postcodeToAddress & no Address yet known
+            var keepHidden;
+            if (this.postcodeToAddress && !data.address) {
+                keepHidden = true;
+            }
+
             // Propagate pre-selected values
-            var L0 = data.L0,
+            var self = this,
+                L0 = data.L0,
                 L1 = data.L1,
                 L2 = data.L2,
                 L3 = data.L3,
                 L4 = data.L4,
-                L5 = data.L5;
-            if (L0) {
-                this._lxSelect(0, L0, true);
-            }
+                L5 = data.L5,
+                pending;
+
+            // Select Lx in order
             // || is to support Missing levels
-            if (L1 || L2) {
-                this._lxSelect(1, L1 || L2, true);
-            }
-            if (L2 || L3) {
-                this._lxSelect(2, L2 || L3, true);
-            }
-            if (L3 || L4) {
-                this._lxSelect(3, L3 || L4, true);
-            }
-            if (L4 || L5) {
-                this._lxSelect(4, L4 || L5, true);
-            }
-            if (L5) {
-                this._lxSelect(5, L5, true);
-            }
+            [L0, L1 || L2, L2 || L3, L3 || L4, L4 || L5, L5].forEach(function(level, index) {
+                if (level) {
+                    if (pending) {
+                        pending = pending.then(function() {
+                            return self.lxSelect(index, level, true, keepHidden);
+                        });
+                    } else {
+                        pending = self.lxSelect(index, level, true, keepHidden);
+                    }
+                }
+            });
 
             // Store original Lx path
             this.lx = [L0, L1, L2, L3, L4, L5].join('|');
 
-            // Show Address/Postcode Rows (__row1 = tuple themes)
-            $(selector + '_address').val(data.address);
-            $(selector + '_address__row').removeClass('hide').show();
-            $(selector + '_address__row1').removeClass('hide').show();
+            var address = data.address;
+            $(selector + '_address').val(address);
+
+            if (address) {
+                // Show Address Rows (__row1 = tuple themes)
+                $(selector + '_address__row').removeClass('hide').show();
+                $(selector + '_address__row1').removeClass('hide').show();
+            } else if (this.postcodeToAddress) {
+                // Pass
+            } else {
+                // Show Address Rows (__row1 = tuple themes)
+                $(selector + '_address__row').removeClass('hide').show();
+                $(selector + '_address__row1').removeClass('hide').show();
+            }
 
             $(selector + '_postcode').val(data.postcode);
+
+            // Show Postcode Rows (__row1 = tuple themes)
             $(selector + '_postcode__row').removeClass('hide').show();
             $(selector + '_postcode__row1').removeClass('hide').show();
+            if (this.postcodeToAddress) {
+                $(selector + '_postcode_to_address__row').removeClass('hide').show();
+                $(selector + '_postcode_to_address__row1').removeClass('hide').show();
+            }
 
             // Show Lat/Lon Rows (__row1 = tuple themes)
             $(selector + '_lat').val(data.lat)
@@ -266,7 +295,7 @@
 
             // Arrange the widget's inner elements
             var formRow = $(selector + '__row'),
-                errorWrapper = this.input.next('.error_wrapper'),
+                errorWrapper = this.input.next('.error_wrapper').addClass('error_top'),
                 mapIconRow = $(selector + '_map_icon__row'),
                 L0Row = $(selector + '_L0__row'),
                 postcodeRow = $(selector + '_postcode__row');
@@ -279,6 +308,7 @@
                     L4Row = $(selector + '_L4__row'),
                     L5Row = $(selector + '_L5__row'),
                     addressRow = $(selector + '_address__row'),
+                    postcodeToAddressRow = $(selector + '_postcode_to_address__row'),
                     latRow = $(selector + '_lat__row'),
                     lonRow = $(selector + '_lon__row'),
                     latlonToggleRow = $(selector + '_latlon_toggle__row');
@@ -295,6 +325,7 @@
                            .after(L3Row)
                            .after(L4Row)
                            .after(L5Row)
+                           .after(postcodeToAddressRow)
                            .after(postcodeRow)
                            .after(addressRow)
                            .after(errorWrapper);
@@ -305,6 +336,7 @@
                            .after(latlonToggleRow)
                            .after(lonRow)
                            .after(latRow)
+                           .after(postcodeToAddressRow)
                            .after(postcodeRow)
                            .after(addressRow)
                            .after(L5Row)
@@ -378,11 +410,15 @@
          * @param {number} id - the record ID of the selected Lx location
          * @param {bool} refresh - whether this is called before user input
          *                         (in which case we want to prevent geocoding)
+         * @param {bool} keepHidden - whether to keep the dropdown hidden
+         *                           (e.g. we are using postcodeToAddress)
          */
-        _lxSelect: function(level, id, refresh) {
+        lxSelect: function(level, id, refresh, keepHidden) {
 
-            var selector = '#' + this.fieldname,
-                opts = this.options,
+            var dfd = $.Deferred(),
+                self = this,
+                selector = '#' + self.fieldname,
+                opts = self.options,
                 dropdown = $(selector + '_L' + level),
                 s,
                 l;
@@ -403,7 +439,7 @@
             // Update hierarchy labels
             if (level === 0) {
 
-                var labelled = this._readLabels(id),
+                var labelled = self._readLabels(id),
                     defaultLabels = hierarchyLabels.d,
                     levels = ['1', '2', '3', '4', '5'],
                     label,
@@ -479,18 +515,18 @@
                 }
                 if (!dropdown_row.length) {
                     // No next level - we're at the bottom of the hierarchy
-                    if (this.useGeocoder && !refresh) {
-                        this._geocodeDecision();
+                    if (self.useGeocoder && !refresh) {
+                        self._geocodeDecision();
                     }
                     // Call DRY Helper
-                    this._lxSelectFinal(refresh);
+                    self._lxSelectFinal(refresh);
+                    dfd.resolve();
                 } else {
                     // Do we need to read hierarchy?
                     var locations,
                         location,
                         locationID,
-                        read = false,
-                        that = this;
+                        read = false;
                     if ($(selector + '_L' + level + ' option[value="' + id + '"]').hasClass('missing')) {
                         // An individual location with a Missing Level: we already have the data
                         location = hierarchyLocations[id];
@@ -508,7 +544,7 @@
                         }
                     }
 
-                    var reading = this._readHierarchy(read, id, next, missing);
+                    var reading = self._readHierarchy(read, id, next, missing);
 
                     reading.then(
                         function() {
@@ -565,9 +601,13 @@
                                     select.append(option);
                                 }
 
-                                // Show dropdown
-                                dropdown_row.removeClass('hide').show();
-                                $(selector + '_L' + next + '__row1').removeClass('hide').show(); // Tuple themes
+                                if (keepHidden) {
+                                    // Don't show Dropdown
+                                } else {
+                                    // Show dropdown
+                                    dropdown_row.removeClass('hide').show();
+                                    $(selector + '_L' + next + '__row1').removeClass('hide').show(); // Tuple themes
+                                }
 
                                 // Instantiate (or refresh) multiselect
                                 if (select.hasClass('multiselect')) {
@@ -591,26 +631,31 @@
                                 }
 
                                 // Automatic selection of next level location
-                                var previous = that.data['L' + next],
+                                var previous = self.data['L' + next],
                                     available = locations.map(function(l) {return l.i;});
                                 if (previous && available.indexOf('' + previous) != -1) {
                                     // Previously selected value is still available,
                                     // so select it again
-                                    that._lxSelect(next, previous, refresh);
+                                    self.lxSelect(next, previous, refresh);
                                 } else if (numLocations == 1 && locationID) {
                                     // Only one option available, so select this one
-                                    that._lxSelect(next, locationID, refresh);
+                                    // @ToDo: This fails if we geocode/postcode_to_address to an area outside of the coverage of the polygons that we have imported and the closest exact match is hidden
+                                    self.lxSelect(next, locationID, refresh);
                                 }
                             }
                             // Call DRY Helper
-                            that._lxSelectFinal(refresh);
+                            self._lxSelectFinal(refresh);
+
+                            dfd.resolve();
                         }
                     );
                 }
             } else {
                 // Call DRY Helper
-                this._lxSelectFinal(refresh);
+                self._lxSelectFinal(refresh);
+                dfd.resolve();
             }
+            return dfd.promise();
         },
 
         /**
@@ -681,7 +726,7 @@
                 level,
                 value;
 
-            for (level=0; level<6; level++) {
+            for (level = 0; level < 6; level++) {
                 dropdown = $(selector + '_L' + level);
                 // Only update if the dropdown exists, else retain default
                 if (dropdown.length) {
@@ -918,41 +963,48 @@
             // Collect address and postcode
             this._collectData();
 
-            // Address is mandatory for geocoding
-            if (!data.address) {
-                return;
-            }
+            if (S3.gis.geocodeDecisionPlugin) {
+                // Use Plugin's custom Geocoder workflow
+                S3.gis.geocodeDecisionPlugin(selector, data, this);
+            } else {
+                // Use default Geocoder workflow
 
-            // Lx is mandatory to the lowest level if it has options
-            var levels = ['1', '2', '3', '4', '5'];
-            for (var i=0, dropdown; i < 5; i++) {
-                dropdown = $(selector + '_L' + levels[i]);
-                if (dropdown.length && !dropdown.val()) {
-                    if (dropdown[0].options.length > 1) {
-                        // User hasn't yet selected an option, but can do so
-                        return;
+                // Address is mandatory for geocoding
+                if (!data.address) {
+                    return;
+                }
+
+                // Lx is mandatory to the lowest level if it has options
+                var levels = ['1', '2', '3', '4', '5'];
+                for (var i=0, dropdown; i < 5; i++) {
+                    dropdown = $(selector + '_L' + levels[i]);
+                    if (dropdown.length && !dropdown.val()) {
+                        if (dropdown[0].options.length > 1) {
+                            // User hasn't yet selected an option, but can do so
+                            return;
+                        }
                     }
                 }
-            }
 
-            // Hide previous success/failure messages
-            $(selector + '_geocode .geocode_success,' +
-              selector + '_geocode .geocode_fail').hide();
+                // Hide previous success/failure messages
+                $(selector + '_geocode .geocode_success,' +
+                  selector + '_geocode .geocode_fail').hide();
 
-            var self = this,
-                ns = this.eventNamespace;
-            if (this.input.data('manually_geocoded')) {
-                // Show a button to allow the user to do a new automatic Geocode
-                $(selector + '_geocode button').removeClass('hide')
-                                               .show()
-                                               .unbind(ns)
-                                               .bind('click' + ns, function() {
-                    $(this).hide();
-                    self._geocode();
-                });
-            } else {
-                // Do an automatic Geocode
-                this._geocode();
+                var self = this,
+                    ns = this.eventNamespace;
+                if (this.input.data('manually_geocoded')) {
+                    // Show a button to allow the user to do a new automatic Geocode
+                    $(selector + '_geocode button').removeClass('hide')
+                                                   .show()
+                                                   .unbind(ns)
+                                                   .bind('click' + ns, function() {
+                        $(this).hide();
+                        self._geocode();
+                    });
+                } else {
+                    // Do an automatic Geocode
+                    this._geocode();
+                }
             }
         },
 
@@ -981,6 +1033,9 @@
                     postData[k] = v;
                 }
             }
+
+            // Add the formkey
+            postData.k = $(selector + '_geocode button').data('k');
 
             // Submit to Geocoder
             var url = S3.Ap.concat('/gis/geocode');
@@ -1061,6 +1116,9 @@
             var data = this.data;
             var postData = {lat: data.lat, lon: data.lon};
 
+            // Add the formkey
+            postData.k = $(selector + '_geocode button').data('k');
+
             // Submit to Geocoder
             var url = S3.Ap.concat('/gis/geocode_r');
             $.ajaxS3({
@@ -1070,25 +1128,31 @@
                 data: postData,
                 dataType: 'json',
                 success: function(result) {
-                    if (result.L0) {
+
+                    var L0 = result.L0,
+                        L1 = result.L1,
+                        L2 = result.L2,
+                        L3 = result.L3,
+                        L4 = result.L4,
+                        L5 = result.L5;
+
+                    if (L0) {
                         // Prevent forward geocoding
                         self.useGeocoder = false;
-                        self._lxSelect(0, result.L0);
-                        if (result.L1) {
-                            self._lxSelect(1, result.L1);
-                        }
-                        if (result.L2) {
-                            self._lxSelect(2, result.L2);
-                        }
-                        if (result.L3) {
-                            self._lxSelect(3, result.L3);
-                        }
-                        if (result.L4) {
-                            self._lxSelect(4, result.L4);
-                        }
-                        if (result.L5) {
-                            self._lxSelect(5, result.L5);
-                        }
+
+                        var pending;
+                        [L0, L1 || L2, L2 || L3, L3 || L4, L4 || L5, L5].forEach(function(level, index) {
+                            if (level) {
+                                if (pending) {
+                                    pending = pending.then(function() {
+                                        return self.lxSelect(index, level);
+                                    });
+                                } else {
+                                    pending = self.lxSelect(index, level);
+                                }
+                            }
+                        });
+
                         // Reset Geocoder-option
                         self.useGeocoder = true;
                         // Notify results
@@ -1173,6 +1237,151 @@
                     this._zoomMap();
                 }
             }
+        },
+
+        /**
+         * Lookup a list of Addresses from the Postcode
+         */
+        _postcodeToAddress: function() {
+
+            // Collect postcode
+            this._collectData();
+
+            var fieldname = this.fieldname,
+                self = this,
+                selector = '#' + fieldname,
+                data = this.data,
+                postcode = data.postcode;
+
+            // Postcode is mandatory for lookup
+            if (!postcode) {
+                return;
+            }
+
+            // Hide old menu and messages, show throbber
+            $(selector + '_address_menu').remove();
+            var failure = $(selector + '_postcode__row .geocode_fail').hide(),
+                throbber = $(selector + '_postcode__row .throbber').removeClass('hide').show();
+            if (!failure.length) {
+                $(selector + '_postcode__row .columns').append('<div class="geocode_fail hide"></div>');
+                failure = $(selector + '_postcode__row .geocode_fail');
+            }
+            if (!throbber.length) {
+                $(selector + '_postcode__row .columns').append('<div class="throbber"></div>');
+                throbber = $(selector + '_postcode__row .throbber');
+            }
+            // Submit to Server
+            $.ajaxS3({
+                //async: false,
+                url: S3.Ap.concat('/gis/postcode_to_address'),
+                type: 'POST',
+                data: {postcode: postcode,
+                       k: self.postcodeToAddress
+                       },
+                dataType: 'json',
+                success: function(result) {
+
+                    var addresses = result.addresses;
+                    if (addresses && addresses.length) {
+
+                        // Notify results
+                        throbber.hide();
+
+                        // Show list of Addresses
+                        var address_list = '<ul id="' + fieldname + '_address_menu">';
+                        for (var i = 0; i < addresses.length; i++) {
+                            address_list += '<li><div>' + addresses[i] + '</div></li>';
+                        }
+                        address_list += '</ul>';
+                        $(selector + '_postcode').after(address_list);
+                        $(selector + '_address_menu').menu({
+                            select: function(event, ui) {
+                                // Address has been selected
+                                // Update data dict + serialize
+                                data.address = ui.item[0].innerText;
+                                $(selector + '_address').val(data.address);
+                                data.lat = parseFloat(result.lat);
+                                data.lon = parseFloat(result.lon);
+                                self._collectData();
+
+                                // Show Address field
+                                $(selector + '_address__row').removeClass('hide').show();
+                                $(selector + '_address__row1').removeClass('hide').show();
+
+                                // Remove the menu
+                                $(selector + '_address_menu').menu('destroy').remove();
+
+                                // If Map Showing then add/move Point
+                                var gis = S3.gis;
+                                if (gis.maps) {
+                                    var map = gis.maps['location_selector_' + fieldname];
+                                    if (map) {
+                                        var draftLayer = map.s3.draftLayer;
+                                        draftLayer.removeAllFeatures();
+                                        var geometry = new OpenLayers.Geometry.Point(data.lon, data.lat);
+                                        geometry.transform(gis.proj4326, map.getProjectionObject());
+                                        var feature = new OpenLayers.Feature.Vector(geometry);
+                                        draftLayer.addFeatures([feature]);
+                                        // Move viewport to this feature
+                                        self._zoomMap();
+                                    }
+                                }
+
+                                var L0 = result.L0,
+                                    L1 = result.L1,
+                                    L2 = result.L2,
+                                    L3 = result.L3,
+                                    L4 = result.L4,
+                                    L5 = result.L5;
+
+                                if (L0) {
+                                    // Prevent forward geocoding
+                                    // Geocoder incompatible with Postcode to Address
+                                    //self.useGeocoder = false;
+
+                                    $(selector + '_L0__row').removeClass('hide').show();
+                                    $(selector + '_L0__row1').removeClass('hide').show(); // Tuple themes
+
+                                    var pending;
+                                    [L0, L1 || L2, L2 || L3, L3 || L4, L4 || L5, L5].forEach(function(level, index) {
+                                        if (level) {
+                                            if (pending) {
+                                                pending = pending.then(function() {
+                                                    return self.lxSelect(index, level, true);
+                                                });
+                                            } else {
+                                                pending = self.lxSelect(index, level, true);
+                                            }
+                                        }
+                                    });
+
+                                    // Reset Geocoder-option
+                                    //self.useGeocoder = true;
+                                }
+                            }
+                        });
+                    } else {
+
+                        // Notify results
+                        throbber.hide();
+                        failure.html(i18n.no_addresses_found).removeClass('hide').show();
+                        s3_debug(result);
+                    }
+                },
+                error: function(request, status, error) {
+                    var msg;
+                    if (error == 'UNAUTHORIZED') {
+                        msg = i18n.gis_requires_login;
+                    } else {
+                        msg = request.responseText;
+                    }
+                    // Notify results
+                    throbber.hide();
+                    failure.html(msg).removeClass('hide').show();
+                    s3_debug(msg);
+                }
+            });
+
         },
 
         /**
@@ -1487,8 +1696,8 @@
                 data = this.data,
                 featureRequired = this.options.featureRequired;
 
+            // Check mandatory map feature (wkt or lat/lon)
             if (featureRequired) {
-                // Must have latlon or wkt
                 var valid = false;
                 switch (featureRequired) {
                     case 'latlon':
@@ -1503,56 +1712,45 @@
                         break;
                 }
                 if (!valid) {
-                    S3.fieldError(selector + '_map_icon', i18n.map_feature_required);
+                    this._fieldError($(selector + '_map_icon'), i18n.map_feature_required);
                     return false;
                 }
             }
 
-            var current_value = data.id,
-                suffix = ['address', 'L5', 'L4', 'L3', 'L2', 'L1', 'L0'],
-                i,
-                s,
-                f,
-                visible = function(field) {
-                    if (field.hasClass('multiselect')) {
-                        return field.next('button.ui-multiselect').is(':visible');
-                    } else {
-                        return field.is(':visible');
-                    }
-                };
+            var isVisible = function(field) {
+                if (field.hasClass('multiselect')) {
+                    return field.next('button.ui-multiselect').is(':visible');
+                } else {
+                    return field.is(':visible');
+                }
+            };
 
-            if (current_value) {
-                if (!hierarchyLocations[current_value]) {
-                    // Specific location => ok
-                    return true;
+            // Check mandatory Lx
+            var missingInput = false,
+                suffix = ['L5', 'L4', 'L3', 'L2', 'L1', 'L0'],
+                s, f;
+            for (var i=0; i < 6; i++) {
+                var level = suffix[i];
+                s = selector + '_' + level;
+                f = $(s);
+                if (f.length && f.hasClass('required') && isVisible(f) && !data[level]) {
+                    this._fieldError(f, i18n.enter_value);
+                    missingInput = true;
+                    break;
                 }
-                var current_level = hierarchyLocations[current_value].l;
-                // Is a lower level required? If so, then prevent submission
-                for (i = 0; i < 6 - current_level; i++) {
-                    s = selector + '_' + suffix[i];
-                    f = $(s);
-                    if (f.length && f.hasClass('required') && visible(f)) {
-                        S3.fieldError(s, i18n.enter_value);
-                        return false;
-                    }
-                }
-                return true;
-            } else {
-                if (data.lat || data.lon || data.wkt || data.address || data.postcode) {
-                    // Specific location => ok
-                    return true;
-                }
-                // Is any level required? If so, then prevent submission
-                for (i = 0; i < 7; i++) {
-                    s = selector + '_' + suffix[i];
-                    f = $(s);
-                    if (f.length && f.hasClass('required') && visible(f)) {
-                        S3.fieldError(s, i18n.enter_value);
-                        return false;
-                    }
-                }
-                return true;
             }
+
+            // Check mandatory text inputs
+            ['address', 'postcode'].forEach(function(suffix) {
+                s = selector + '_' + suffix;
+                f = $(s);
+                if (f.length && f.hasClass('required') && isVisible(f) && !data[suffix]) {
+                    this._fieldError(f, i18n.enter_value);
+                    missingInput = true;
+                }
+            }, this);
+
+            return !missingInput;
         },
 
         /**
@@ -1628,6 +1826,21 @@
         },
 
         /**
+         * Add an error message
+         *
+         * @param {jQuery} element - the input element
+         * @param {string} error - the error message
+         */
+        _fieldError: function(element, error) {
+
+            element.addClass('invalidinput')
+                   .after('<div class="error" style="display: block;">' + error + '</div>');
+
+            $('.invalidinput').get(0).scrollIntoView();
+        },
+
+
+        /**
          * Remove error messages
          *
          * @param {jQuery} element - the input field (removes all error messages
@@ -1647,7 +1860,7 @@
                           selector + '_postcode,' +
                           selector + '_map_icon';
             }
-            $(element).siblings('.error').remove();
+            $(element).removeClass('invalidinput').siblings('.error').remove();
         },
 
         /**
@@ -1663,31 +1876,30 @@
 
             $(selector + '_L0').bind('change' + ns, function() {
                 self._removeErrors(this);
-                self._lxSelect(0);
+                self.lxSelect(0);
             });
             $(selector + '_L1').bind('change' + ns, function() {
                 self._removeErrors(this);
-                self._lxSelect(1);
+                self.lxSelect(1);
             });
             $(selector + '_L2').bind('change' + ns, function() {
                 self._removeErrors(this);
-                self._lxSelect(2);
+                self.lxSelect(2);
             });
             $(selector + '_L3').bind('change' + ns, function() {
                 self._removeErrors(this);
-                self._lxSelect(3);
+                self.lxSelect(3);
             });
             $(selector + '_L4').bind('change' + ns, function() {
                 self._removeErrors(this);
-                self._lxSelect(4);
+                self.lxSelect(4);
             });
             $(selector + '_L5').bind('change' + ns, function() {
                 self._removeErrors(this);
-                self._lxSelect(5);
+                self.lxSelect(5);
             });
 
-            $(selector + '_address,' +
-              selector + '_postcode').bind('change' + ns, function() {
+            $(selector + '_address').bind('change' + ns, function() {
                 self._removeErrors(this);
                 if (self.useGeocoder) {
                     // geocodeDecision includes collectData
@@ -1696,6 +1908,50 @@
                 } else {
                     self._collectData();
                 }
+            });
+            $(selector + '_postcode').bind('change' + ns, function() {
+                self._removeErrors(this);
+                if (self.useGeocoder) {
+                    // geocodeDecision includes collectData
+                    //self._collectData();
+                    self._geocodeDecision();
+                } else if (self.postcodeToAddress) {
+                    self._postcodeToAddress();
+                } else {
+                    self._collectData();
+                }
+            });
+            $(selector + '_postcode_to_address').bind('click' + ns, function() {
+                // Show fields to do manual entry
+                $(selector + '_address__row').removeClass('hide').show();
+                $(selector + '_address__row1').removeClass('hide').show();
+                $(selector + '_L0__row').removeClass('hide').show();
+                $(selector + '_L0__row1').removeClass('hide').show();
+                var data = self.data,
+                    L0 = data.L0,
+                    L1 = data.L1,
+                    L2 = data.L2,
+                    L3 = data.L3,
+                    L4 = data.L4,
+                    L5 = data.L5,
+                    pending;
+
+                // Select Lx in order
+                // || is to support Missing levels
+                [L0, L1 || L2, L2 || L3, L3 || L4, L4 || L5, L5].forEach(function(level, index) {
+                    if (level) {
+                        if (pending) {
+                            pending = pending.then(function() {
+                                return self.lxSelect(index, level, true);
+                            });
+                        } else {
+                            pending = self.lxSelect(index, level, true);
+                        }
+                    }
+                });
+
+                // Hide the manual entry button
+                $(this).hide();
             });
             $(selector + '_lat,' +
               selector + '_lon').bind('change' + ns, function() {
@@ -1755,6 +2011,7 @@
               selector + '_L5,' +
               selector + '_address,' +
               selector + '_postcode,' +
+              selector + '_postcode_to_address,' +
               selector + '_map_icon,' +
               selector + '_latlon_toggle').unbind(ns);
 

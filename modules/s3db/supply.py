@@ -2,7 +2,7 @@
 
 """ Sahana Eden Supply Model
 
-    @copyright: 2009-2020 (c) Sahana Software Foundation
+    @copyright: 2009-2021 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -41,7 +41,7 @@ __all__ = ("S3SupplyModel",
            "supply_item_entity_contacts",
            "supply_item_entity_status",
            "supply_ItemRepresent",
-           #"supply_ItemCategoryRepresent",
+           "supply_ItemCategoryRepresent",
            "supply_get_shipping_code",
            "supply_item_pack_quantities",
            )
@@ -420,7 +420,7 @@ $.filterOptionsS3({
                            label = T("Year of Manufacture"),
                            represent = lambda v: v or NONE,
                            requires = IS_EMPTY_OR(
-                                        IS_INT_IN_RANGE(1900, current.request.now.year)
+                                        IS_INT_IN_RANGE(1900, current.request.now.year + 1)
                                         ),
                            ),
                      Field("weight", "double",
@@ -450,8 +450,13 @@ $.filterOptionsS3({
                      Field("volume", "double",
                            label = T("Volume (m3)"),
                            represent = lambda v: \
-                                       float_represent(v, precision=2),
+                                       float_represent(v, precision=3),
                            requires = IS_EMPTY_OR(IS_FLOAT_AMOUNT(minimum=0.0)),
+                           ),
+                     Field("obsolete", "boolean",
+                           default = False,
+                           readable = False,
+                           writable = False,
                            ),
                      # These comments do *not* pull through to an Inventory's Items or a Request's Items
                      s3_comments(),
@@ -530,10 +535,10 @@ $.filterOptionsS3({
                             ),
             ]
 
-        report_options = Storage(defaults=Storage(rows="name",
-                                                  cols="item_category_id",
-                                                  fact="count(brand_id)",
-                                                  ),
+        report_options = Storage(defaults = Storage(rows = "name",
+                                                    cols = "item_category_id",
+                                                    fact = "count(brand_id)",
+                                                    ),
                                  )
 
         # Default summary
@@ -640,7 +645,7 @@ $.filterOptionsS3({
                           "item_id$name",
                           "item_id$model",
                           "item_id$comments"
-                         ],
+                          ],
                          label = T("Search"),
                          comment = T("Search for an item by its code, name, model and/or comment."),
                         ),
@@ -1160,7 +1165,8 @@ $.filterOptionsS3({
         if quantity:
             query &= (table.quantity == quantity)
         duplicate = current.db(query).select(table.id,
-                                             limitby=(0, 1)).first()
+                                             limitby = (0, 1)
+                                             ).first()
         if duplicate:
             item.id = duplicate.id
             item.method = item.METHOD.UPDATE
@@ -1175,35 +1181,34 @@ $.filterOptionsS3({
 
         db = current.db
 
-        formvars = form.vars
-        item_id = formvars.id
-        catalog_id = formvars.catalog_id
+        form_vars = form.vars
+        item_id = form_vars.id
+        catalog_id = form_vars.catalog_id
         catalog_item_id = None
 
         citable = db.supply_catalog_item
         query = (citable.item_id == item_id) & \
-                (citable.deleted == False )
-        rows = db(citable).select(citable.id)
+                (citable.deleted == False)
+        rows = db(query).select(citable.id)
         if not len(rows):
-        # Create supply_catalog_item
+            # Create supply_catalog_item
             catalog_item_id = \
                 citable.insert(catalog_id = catalog_id,
-                               item_category_id = formvars.item_category_id,
+                               item_category_id = form_vars.item_category_id,
                                item_id = item_id
                                )
-        # Update if the catalog/category has changed - if there is only supply_catalog_item
         elif len(rows) == 1:
+            # Update if the catalog/category has changed - if there is only supply_catalog_item
             catalog_item_id = rows.first().id
             catalog_item_id = \
-                db(citable.id == catalog_item_id
-                   ).update(catalog_id = catalog_id,
-                            item_category_id = formvars.item_category_id,
-                            item_id = item_id
-                            )
+                db(citable.id == catalog_item_id).update(catalog_id = catalog_id,
+                                                         item_category_id = form_vars.item_category_id,
+                                                         item_id = item_id,
+                                                         )
         #current.auth.s3_set_record_owner(citable, catalog_item_id, force_update=True)
 
         # Update UM
-        um = formvars.um or db.supply_item.um.default
+        um = form_vars.um or db.supply_item.um.default
         table = db.supply_item_pack
         # Try to update the existing record
         query = (table.item_id == item_id) & \
@@ -1213,14 +1218,15 @@ $.filterOptionsS3({
             # Create a new item packet
             table.insert(item_id = item_id,
                          name = um,
-                         quantity = 1)
+                         quantity = 1,
+                         )
 
-        if formvars.kit:
+        if form_vars.kit:
             # Go to that tab afterwards
-            url = URL(args=["[id]", "kit_item"])
+            url = URL(args = ["[id]", "kit_item"])
             current.s3db.configure("supply_item",
-                                   create_next=url,
-                                   update_next=url,
+                                   create_next = url,
+                                   update_next = url,
                                    )
 
 # =============================================================================
@@ -2927,11 +2933,16 @@ def supply_get_shipping_code(doctype, site_id, field):
                       (to look up the previous number for incrementing)
     """
 
+    # Custom shipping code generator?
+    custom_code = current.deployment_settings.get_supply_shipping_code()
+    if callable(custom_code):
+        return custom_code(doctype, site_id, field)
+
     db = current.db
     if site_id:
         table = current.s3db.org_site
         site = db(table.site_id == site_id).select(table.code,
-                                                   limitby=(0, 1)
+                                                   limitby = (0, 1)
                                                    ).first()
         if site:
             scode = site.code
@@ -2944,8 +2955,9 @@ def supply_get_shipping_code(doctype, site_id, field):
     if field:
         query = (field.like("%s%%" % code))
         ref_row = db(query).select(field,
-                                   limitby=(0, 1),
-                                   orderby=~field).first()
+                                   limitby = (0, 1),
+                                   orderby = ~field
+                                   ).first()
         if ref_row:
             ref = ref_row(field)
             number = int(ref[-6:])

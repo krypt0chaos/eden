@@ -4,7 +4,7 @@
 
     @requires: U{B{I{gluon}} <http://web2py.com>}
 
-    @copyright: (c) 2010-2020 Sahana Software Foundation
+    @copyright: (c) 2010-2021 Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -248,10 +248,10 @@ def s3_represent_value(field,
                              lambda: field.represent(val),
                              time_expire = 60,
                              )
-            if isinstance(text, DIV):
-                text = str(text)
-            elif not isinstance(text, basestring):
-                text = s3_unicode(text)
+        if isinstance(text, DIV):
+            text = str(text)
+        elif not isinstance(text, basestring):
+            text = s3_unicode(text)
     else:
         if val is None:
             text = NONE
@@ -285,10 +285,10 @@ def s3_represent_value(field,
     elif xml_escape:
         text = xml_encode(text)
 
-    try:
-        text = text.decode("utf-8")
-    except:
-        pass
+    #try:
+    #    text = text.decode("utf-8")
+    #except:
+    #    pass
 
     return text
 
@@ -613,7 +613,7 @@ def s3_text_represent(text, truncate=True, lines=5, _class=None):
        current.auth.permission.format in ("html", "popup", "iframe"):
         s3_trunk8(selector = selector, lines = lines)
 
-    return DIV(text, _class="text-body")
+    return DIV(text, _class=_class)
 
 # =============================================================================
 def s3_format_fullname(fname=None, mname=None, lname=None, truncate=True):
@@ -676,10 +676,16 @@ def s3_fullname(person=None, pe_id=None, truncate=True):
         record = db(query).select(ptable.first_name,
                                   ptable.middle_name,
                                   ptable.last_name,
-                                  limitby=(0, 1)).first()
+                                  limitby = (0, 1)
+                                  ).first()
     if record:
         fname, mname, lname = "", "", ""
         if "pr_person" in record:
+            # Check if this is a LazySet from db.auth_user
+            #test = record["pr_person"]
+            #from pydal.objects import LazySet
+            #if not isinstance(test, LazySet)
+            #    record = test
             record = record["pr_person"]
         if record.first_name:
             fname = record.first_name.strip()
@@ -775,6 +781,57 @@ def s3_url_represent(url):
     if not url:
         return ""
     return A(url, _href=url, _target="_blank")
+
+# =============================================================================
+def s3_qrcode_represent(value, row=None, show_value=True):
+    """
+        Simple QR Code representer, produces a DIV with embedded SVG,
+        useful to embed QR Codes that are to be scanned directly from
+        the screen, or for previews
+
+        @requires: python-qrcode (pip install qrcode), and PIL
+
+        @param value: the value to render (will be converted to str)
+        @param row: the Row (unused, for API-compatibility)
+        @param show_value: include the value (as str) in the representation
+
+        @returns: DIV
+    """
+
+    try:
+        import qrcode
+        import qrcode.image.svg
+    except ImportError:
+        return s3_str(value)
+
+    # Generate the QR Code
+    qr = qrcode.QRCode(version = 2,
+                       error_correction = qrcode.constants.ERROR_CORRECT_M,
+                       box_size = 10,
+                       border = 4,
+                       image_factory=qrcode.image.svg.SvgImage,
+                       )
+    qr.add_data(s3_str(value))
+    qr.make(fit=True)
+
+    # Write the SVG into a buffer
+    qr_svg = qr.make_image()
+
+    from s3compat import BytesIO
+    stream = BytesIO()
+    qr_svg.save(stream)
+
+    # Generate XML string to embed
+    stream.seek(0)
+    svgxml = XML(stream.read())
+
+    output = DIV(DIV(svgxml, _class="s3-qrcode-svg"),
+                 _class="s3-qrcode-display",
+                 )
+    if show_value:
+        output.append(DIV(s3_str(value), _class="s3-qrcode-val"))
+
+    return output
 
 # =============================================================================
 def s3_URLise(text):
@@ -912,6 +969,7 @@ def s3_auth_user_represent_name(user_id, row=None):
         table = db.auth_user
         row = db(table.id == user_id).select(table.first_name,
                                              table.last_name,
+                                             cache = current.s3db.cache,
                                              limitby = (0, 1),
                                              ).first()
     try:
@@ -1919,11 +1977,13 @@ class S3PriorityRepresent(object):
         self.options = dict(options)
         self.classes = classes
 
-    def represent(self, value, row=None):
+    # -------------------------------------------------------------------------
+    def __call__(self, value, row=None):
         """
             Representation function
 
             @param value: the value to represent
+            @param row: the Row (unused, for API compatibility)
         """
 
         css_class = base_class = "prio"
@@ -1937,6 +1997,14 @@ class S3PriorityRepresent(object):
         label = self.options.get(value)
 
         return DIV(label, _class=css_class)
+
+    # -------------------------------------------------------------------------
+    def represent(self, value, row=None):
+        """
+            Wrapper for self.__call__, for backwards-compatibility
+        """
+
+        return self(value, row=row)
 
 # =============================================================================
 class Traceback(object):
@@ -1971,9 +2039,15 @@ class Traceback(object):
             for key in editable.keys():
                 check_extension = f_endswith("%s/%s" % (app, key))
                 if l_ext == editable[key] and check_extension:
+                    edit_url = URL(a = "admin",
+                                   c = "default",
+                                   f = "edit",
+                                   args = [app, key, filename],
+                                   )
                     return A('"' + tryFile + '"',
-                             _href=URL("edit/%s/%s/%s" % \
-                                           (app, key, filename))).xml()
+                             _href = edit_url,
+                             _target = "_blank",
+                             ).xml()
         return ""
 
     # -------------------------------------------------------------------------

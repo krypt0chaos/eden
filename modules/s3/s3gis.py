@@ -5,7 +5,7 @@
     @requires: U{B{I{gluon}} <http://web2py.com>}
     @requires: U{B{I{shapely}} <http://trac.gispython.org/lab/wiki/Shapely>}
 
-    @copyright: (c) 2010-2020 Sahana Software Foundation
+    @copyright: (c) 2010-2021 Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -70,6 +70,7 @@ from s3dal import Rows
 from .s3datetime import s3_format_datetime, s3_parse_datetime
 from .s3fields import s3_all_meta_field_names
 from .s3rest import S3Method
+from .s3rtb import S3ResourceTree
 from .s3track import S3Trackable
 from .s3utils import s3_include_ext, s3_include_underscore, s3_str
 
@@ -238,7 +239,7 @@ class GIS(object):
         #messages.centroid_error = str(A("Shapely", _href="http://pypi.python.org/pypi/Shapely/", _target="_blank")) + " library not found, so can't find centroid!"
         messages.centroid_error = "Shapely library not functional, so can't find centroid! Install Geos & Shapely for Line/Polygon support"
         messages.unknown_type = "Unknown Type!"
-        messages.invalid_wkt_point = "Invalid WKT: must be like POINT(3 4)"
+        messages.invalid_wkt_point = "Invalid WKT: must be like POINT (3 4)"
         messages.invalid_wkt = "Invalid WKT: see http://en.wikipedia.org/wiki/Well-known_text"
         messages.lon_empty = "Invalid: Longitude can't be empty if Latitude specified!"
         messages.lat_empty = "Invalid: Latitude can't be empty if Longitude specified!"
@@ -279,7 +280,7 @@ class GIS(object):
 
         table = current.s3db.gis_layer_kml
         record = current.db(table.id == record_id).select(table.url,
-                                                          limitby=(0, 1)
+                                                          limitby = (0, 1)
                                                           ).first()
         url = record.url
 
@@ -300,7 +301,7 @@ class GIS(object):
                 if statinfo.st_size:
                     # Use cached version
                     #date = db(query).select(cachetable.modified_on,
-                    #                        limitby=(0, 1)).first().modified_on
+                    #                        limitby = (0, 1)).first().modified_on
                     #response.warning += "%s %s %s\n" % (url,
                     #                                    T("not accessible - using cached version from"),
                     #                                    str(date))
@@ -505,11 +506,16 @@ class GIS(object):
 
         if geocoder == "nominatim":
             g = geocoders.Nominatim(user_agent = "Sahana Eden")
-            geocode_ = lambda names, g=g, **kwargs: g.geocode(names, **kwargs)
+        elif geocoder == "geonames":
+            username = settings.get_gis_api_google()
+            if not username:
+                current.log.error("Geocoder: No Username defined for GeoNames")
+                return "No Username"
+            g = geocoders.GeoNames(username = username)
         elif geocoder == "google":
-            api_key = settings.get_gis_api_google()
+            api_key = settings.get_gis_geonames_username()
             if not api_key:
-                current.log.error("Geocoder: No API Key")
+                current.log.error("Geocoder: No API Key defined for Google")
                 return "No API Key"
             g = geocoders.GoogleV3(api_key = api_key)
             #if current.gis.google_geocode_retry:
@@ -532,10 +538,13 @@ class GIS(object):
             #            attempts += 1
             #        return result
             #else:
-            geocode_ = lambda names, g=g, **kwargs: g.geocode(names, **kwargs)
+        elif callable(geocoder):
+            # A custom class
+            g = geocoder()
         else:
-            # @ToDo
             raise NotImplementedError
+
+        geocode_ = lambda names, g=g, **kwargs: g.geocode(names, **kwargs)
 
         location = address
         if postcode:
@@ -618,27 +627,27 @@ class GIS(object):
                         wkt = None
                         if L5 and Lx[L5]["gis_feature_type"] != 1:
                             wkt = db(table.id == L5).select(table.wkt,
-                                                            limitby=(0, 1)
+                                                            limitby = (0, 1)
                                                             ).first().wkt
                             used_Lx = L5
                         elif L4 and Lx[L4]["gis_feature_type"] != 1:
                             wkt = db(table.id == L4).select(table.wkt,
-                                                            limitby=(0, 1)
+                                                            limitby = (0, 1)
                                                             ).first().wkt
                             used_Lx = L4
                         elif L3 and Lx[L3]["gis_feature_type"] != 1:
                             wkt = db(table.id == L3).select(table.wkt,
-                                                            limitby=(0, 1)
+                                                            limitby = (0, 1)
                                                             ).first().wkt
                             used_Lx = L3
                         elif L2 and Lx[L2]["gis_feature_type"] != 1:
                             wkt = db(table.id == L2).select(table.wkt,
-                                                            limitby=(0, 1)
+                                                            limitby = (0, 1)
                                                             ).first().wkt
                             used_Lx = L2
                         elif L1 and Lx[L1]["gis_feature_type"] != 1:
                             wkt = db(table.id == L1).select(table.wkt,
-                                                            limitby=(0, 1)
+                                                            limitby = (0, 1)
                                                             ).first().wkt
                             used_Lx = L1
                         elif L0:
@@ -647,7 +656,7 @@ class GIS(object):
                                                                table.lat_min,
                                                                table.lon_max,
                                                                table.lat_max,
-                                                               limitby=(0, 1)
+                                                               limitby = (0, 1)
                                                                ).first()
                             if not L0_row.wkt.startswith("POI"): # Point
                                 wkt = L0_row.wkt
@@ -674,7 +683,7 @@ class GIS(object):
                                                                    table.lat_min,
                                                                    table.lon_max,
                                                                    table.lat_max,
-                                                                   limitby=(0, 1)
+                                                                   limitby = (0, 1)
                                                                    ).first()
                             if lat < L0_row["lat_max"] and \
                                lat > L0_row["lat_min"] and \
@@ -707,7 +716,7 @@ class GIS(object):
             - used by S3LocationSelector
         """
 
-        if not lat or not lon:
+        if lat is None or lon is None:
             return "Need Lat & Lon"
 
         results = ""
@@ -731,7 +740,7 @@ class GIS(object):
                 query = (table.level != None) & \
                         (table.deleted != True)
                 if current.deployment_settings.get_gis_spatialdb():
-                    point = "POINT(%s %s)" % (lon, lat)
+                    point = "POINT (%s %s)" % (lon, lat)
                     query &= (table.the_geom.st_intersects(point))
                     rows = current.db(query).select(table.id,
                                                     table.level,
@@ -1012,7 +1021,7 @@ class GIS(object):
                                                     table.level,
                                                     table.path,
                                                     table.parent,
-                                                    limitby=(0, 1)).first()
+                                                    limitby = (0, 1)).first()
 
         return feature
 
@@ -1360,7 +1369,7 @@ class GIS(object):
                                                             left = left,
                                                             limitby = (0, 1)
                                                             ).first()
-                    
+
             else:
                 # The requested config must be invalid, so just use site default
                 config_id = 0
@@ -1801,7 +1810,7 @@ class GIS(object):
             location = db(table.id == location).select(table.id,
                                                        table.path,
                                                        table.level,
-                                                       limitby=(0, 1),
+                                                       limitby = (0, 1),
                                                        cache=s3db.cache).first()
         except:
             # location is passed as record
@@ -1815,7 +1824,7 @@ class GIS(object):
                 query = (ttable.tag == "ISO2") & \
                         (ttable.location_id == location.id)
                 tag = db(query).select(ttable.value,
-                                       limitby=(0, 1)).first()
+                                       limitby = (0, 1)).first()
                 try:
                     return tag.value
                 except:
@@ -1833,7 +1842,7 @@ class GIS(object):
                             query = (ttable.tag == "ISO2") & \
                                     (ttable.location_id == row.id)
                             tag = db(query).select(ttable.value,
-                                                   limitby=(0, 1)).first()
+                                                   limitby = (0, 1)).first()
                             try:
                                 return tag.value
                             except:
@@ -1890,7 +1899,7 @@ class GIS(object):
                                                               locations.lon_max,
                                                               locations.lat_min,
                                                               locations.lat_max,
-                                                              limitby=(0, 1)
+                                                              limitby = (0, 1)
                                                               ).first()
             if location:
                 wkt = location.wkt
@@ -2246,7 +2255,7 @@ class GIS(object):
                                                     table.lon,
                                                     table.parent,
                                                     table.path,
-                                                    limitby=(0, 1)).first()
+                                                    limitby = (0, 1)).first()
 
         # Zero is an allowed value, hence explicit test for None.
         if "lon" in feature and "lat" in feature and \
@@ -2404,7 +2413,7 @@ class GIS(object):
             e.g. Feature Layers or Search results (Feature Resources)
             e.g. Exports in KML, GeoRSS or GPX format
 
-            Called by S3REST: S3Resource.export_tree()
+            Called by S3ResourceTree
             @param: resource - S3Resource instance (required)
             @param: attr_fields - list of attr_fields to use instead of reading
                                   from get_vars or looking up in gis_layer_feature
@@ -2476,7 +2485,7 @@ class GIS(object):
                                                            ftable.individual,
                                                            ftable.points,
                                                            ftable.trackable,
-                                                           limitby=(0, 1)
+                                                           limitby = (0, 1)
                                                            ).first()
 
         else:
@@ -2615,7 +2624,7 @@ class GIS(object):
                 #    duration = "{:.2f}".format(duration.total_seconds())
                 #    if layer_id:
                 #        layer_name = db(ftable.id == layer_id).select(ftable.name,
-                #                                                      limitby=(0, 1)
+                #                                                      limitby = (0, 1)
                 #                                                      ).first().name
                 #    else:
                 #        layer_name = "Unknown"
@@ -3025,7 +3034,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
             ctable = current.s3db.gis_config
             the_set = current.db(ctable.id == config_id)
             config = the_set.select(ctable.temp,
-                                    limitby=(0, 1)
+                                    limitby = (0, 1)
                                     ).first()
             try:
                 if config.temp:
@@ -3043,7 +3052,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
         """
             Lookup Shapefile Layer polygons once per layer and not per-record
 
-            Called by S3REST: S3Resource.export_tree()
+            Called by S3ResourceTree
 
             @ToDo: Vary simplification level & precision by Zoom level
                    - store this in the style?
@@ -3113,7 +3122,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
         """
             Lookup Theme Layer polygons once per layer and not per-record
 
-            Called by S3REST: S3Resource.export_tree()
+            Called by S3ResourceTree
 
             @ToDo: Vary precision by Lx
                    - store this (& tolerance map) in the style?
@@ -3228,7 +3237,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
             # WKT not included by default in feature, so retrieve this now
             table = current.s3db.gis_location
             wkt = current.db(table.id == feature.id).select(table.wkt,
-                                                            limitby=(0, 1)
+                                                            limitby = (0, 1)
                                                             ).first().wkt
 
         try:
@@ -3359,7 +3368,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                             output="geojson")
                     else:
                         name = db(table.id == id).select(table.name,
-                                                         limitby=(0, 1)).first().name
+                                                         limitby = (0, 1)).first().name
                         sys.stderr.write("No WKT: L0 %s %s\n" % (name, id))
                         continue
                 else:
@@ -3428,7 +3437,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                 output="geojson")
                         else:
                             name = db(table.id == id).select(table.name,
-                                                             limitby=(0, 1)).first().name
+                                                             limitby = (0, 1)).first().name
                             sys.stderr.write("No WKT: L1 %s %s\n" % (name, id))
                             continue
                     else:
@@ -3489,7 +3498,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                     output="geojson")
                             else:
                                 name = db(table.id == id).select(table.name,
-                                                                 limitby=(0, 1)).first().name
+                                                                 limitby = (0, 1)).first().name
                                 sys.stderr.write("No WKT: L2 %s %s\n" % (name, id))
                                 continue
                         else:
@@ -3553,7 +3562,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                         output="geojson")
                                 else:
                                     name = db(table.id == id).select(table.name,
-                                                                     limitby=(0, 1)).first().name
+                                                                     limitby = (0, 1)).first().name
                                     sys.stderr.write("No WKT: L3 %s %s\n" % (name, id))
                                     continue
                             else:
@@ -3620,7 +3629,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                             output="geojson")
                                     else:
                                         name = db(table.id == id).select(table.name,
-                                                                         limitby=(0, 1)).first().name
+                                                                         limitby = (0, 1)).first().name
                                         sys.stderr.write("No WKT: L4 %s %s\n" % (name, id))
                                         continue
                                 else:
@@ -3825,7 +3834,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                     #area = feat.GetField("Shape_Area")
                     try:
                         id = db(query).select(table.id,
-                                              limitby=(0, 1)).first().id
+                                              limitby = (0, 1)).first().id
                         query = (table.id == id)
                         db(query).update(gis_feature_type=gis_feature_type,
                                          wkt=wkt)
@@ -4123,7 +4132,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                     (ttable.value == parentCode)
             parent = db(query).select(table.id,
                                       ttable.value,
-                                      limitby=(0, 1),
+                                      limitby = (0, 1),
                                       cache=cache).first()
             if not parent:
                 # Skip locations for which we don't have a valid parent
@@ -4599,9 +4608,9 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
             Convert a LatLon to a WKT string
 
             >>> s3gis.latlon_to_wkt(6, 80)
-            'POINT(80 6)'
+            'POINT (80 6)'
         """
-        WKT = "POINT(%f %f)" % (lon, lat)
+        WKT = "POINT (%f %f)" % (lon, lat)
         return WKT
 
     # -------------------------------------------------------------------------
@@ -4617,7 +4626,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
         if not wkt:
             if not lon is not None and lat is not None:
                 raise RuntimeError("Need wkt or lon+lat to parse a location")
-            wkt = "POINT(%f %f)" % (lon, lat)
+            wkt = "POINT (%f %f)" % (lon, lat)
             geom_type = GEOM_TYPES["point"]
             bbox = (lon, lat, lon, lat)
         else:
@@ -4821,7 +4830,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                     table.lon,
                                                     table.wkt,
                                                     table.L0,
-                                                    limitby=(0, 1)).first()
+                                                    limitby = (0, 1)).first()
                 name = feature.name
                 path = feature.path
                 lat = feature.lat
@@ -4879,7 +4888,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                     table.wkt,
                                                     table.L0,
                                                     table.L1,
-                                                    limitby=(0, 1)).first()
+                                                    limitby = (0, 1)).first()
                 inherited = feature.inherited
                 name = feature.name
                 parent = feature.parent
@@ -4895,7 +4904,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                 _L0 = db(table.id == parent).select(table.name,
                                                     table.lat,
                                                     table.lon,
-                                                    limitby=(0, 1)).first()
+                                                    limitby = (0, 1)).first()
                 L0_name = _L0.name
                 L0_lat = _L0.lat
                 L0_lon = _L0.lon
@@ -4959,7 +4968,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                     table.L0,
                                                     table.L1,
                                                     table.L2,
-                                                    limitby=(0, 1)).first()
+                                                    limitby = (0, 1)).first()
                 inherited = feature.inherited
                 name = feature.name
                 parent = feature.parent
@@ -4977,14 +4986,14 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                    table.parent,
                                                    table.lat,
                                                    table.lon,
-                                                   limitby=(0, 1)).first()
+                                                   limitby = (0, 1)).first()
                 if Lx.level == "L1":
                     L1_name = Lx.name
                     _parent = Lx.parent
                     if _parent:
                         _path = "%s/%s/%s" % (_parent, parent, id)
                         L0_name = db(table.id == _parent).select(table.name,
-                                                                 limitby=(0, 1),
+                                                                 limitby = (0, 1),
                                                                  cache=current.s3db.cache
                                                                  ).first().name
                     else:
@@ -5064,7 +5073,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                     table.L1,
                                                     table.L2,
                                                     table.L3,
-                                                    limitby=(0, 1)).first()
+                                                    limitby = (0, 1)).first()
                 inherited = feature.inherited
                 name = feature.name
                 parent = feature.parent
@@ -5087,7 +5096,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                    table.lon,
                                                    table.L0,
                                                    table.L1,
-                                                   limitby=(0, 1)).first()
+                                                   limitby = (0, 1)).first()
                 if Lx.level == "L2":
                     L0_name = Lx.L0
                     L1_name = Lx.L1
@@ -5105,7 +5114,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                            table.L1,
                                                            table.lat,
                                                            table.lon,
-                                                           limitby=(0, 1)
+                                                           limitby = (0, 1)
                                                            ).first()
                         L0_name = Lx.L0
                         L1_name = Lx.L1
@@ -5125,7 +5134,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                         Lx = db(table.id == parent).select(table.L0,
                                                            table.lat,
                                                            table.lon,
-                                                           limitby=(0, 1)
+                                                           limitby = (0, 1)
                                                            ).first()
                         L0_name = Lx.L0
                 elif Lx.level == "L0":
@@ -5205,7 +5214,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                     table.L2,
                                                     table.L3,
                                                     table.L4,
-                                                    limitby=(0, 1)).first()
+                                                    limitby = (0, 1)).first()
                 inherited = feature.inherited
                 name = feature.name
                 parent = feature.parent
@@ -5230,7 +5239,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                    table.L0,
                                                    table.L1,
                                                    table.L2,
-                                                   limitby=(0, 1)).first()
+                                                   limitby = (0, 1)).first()
                 if Lx.level == "L3":
                     L0_name = Lx.L0
                     L1_name = Lx.L1
@@ -5250,7 +5259,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                            table.L2,
                                                            table.lat,
                                                            table.lon,
-                                                           limitby=(0, 1)
+                                                           limitby = (0, 1)
                                                            ).first()
                         L0_name = Lx.L0
                         L1_name = Lx.L1
@@ -5273,7 +5282,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                            table.L1,
                                                            table.lat,
                                                            table.lon,
-                                                           limitby=(0, 1)
+                                                           limitby = (0, 1)
                                                            ).first()
                         L0_name = Lx.L0
                         L1_name = Lx.L1
@@ -5294,7 +5303,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                         Lx = db(table.id == parent).select(table.L0,
                                                            table.lat,
                                                            table.lon,
-                                                           limitby=(0, 1)
+                                                           limitby = (0, 1)
                                                            ).first()
                         L0_name = Lx.L0
                 elif Lx.level == "L0":
@@ -5377,7 +5386,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                     table.L3,
                                                     table.L4,
                                                     table.L5,
-                                                    limitby=(0, 1)).first()
+                                                    limitby = (0, 1)).first()
                 inherited = feature.inherited
                 name = feature.name
                 parent = feature.parent
@@ -5404,7 +5413,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                    table.L1,
                                                    table.L2,
                                                    table.L3,
-                                                   limitby=(0, 1)).first()
+                                                   limitby = (0, 1)).first()
                 if Lx.level == "L4":
                     L0_name = Lx.L0
                     L1_name = Lx.L1
@@ -5426,7 +5435,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                            table.L3,
                                                            table.lat,
                                                            table.lon,
-                                                           limitby=(0, 1)
+                                                           limitby = (0, 1)
                                                            ).first()
                         L0_name = Lx.L0
                         L1_name = Lx.L1
@@ -5452,7 +5461,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                            table.L2,
                                                            table.lat,
                                                            table.lon,
-                                                           limitby=(0, 1)
+                                                           limitby = (0, 1)
                                                            ).first()
                         L0_name = Lx.L0
                         L1_name = Lx.L1
@@ -5476,7 +5485,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                            table.L1,
                                                            table.lat,
                                                            table.lon,
-                                                           limitby=(0, 1)
+                                                           limitby = (0, 1)
                                                            ).first()
                         L0_name = Lx.L0
                         L1_name = Lx.L1
@@ -5498,7 +5507,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                         Lx = db(table.id == parent).select(table.L0,
                                                            table.lat,
                                                            table.lon,
-                                                           limitby=(0, 1)
+                                                           limitby = (0, 1)
                                                            ).first()
                         L0_name = Lx.L0
                 elif Lx.level == "L0":
@@ -5583,7 +5592,8 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                 table.L3,
                                                 table.L4,
                                                 table.L5,
-                                                limitby=(0, 1)).first()
+                                                limitby = (0, 1)
+                                                ).first()
             inherited = feature.inherited
             level = feature.level
             name = feature.name
@@ -5619,7 +5629,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                table.L2,
                                                table.L3,
                                                table.L4,
-                                               limitby=(0, 1)).first()
+                                               limitby = (0, 1)).first()
             if Lx.level == "L5":
                 L0_name = Lx.L0
                 L1_name = Lx.L1
@@ -5643,7 +5653,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                        table.L4,
                                                        table.lat,
                                                        table.lon,
-                                                       limitby=(0, 1)
+                                                       limitby = (0, 1)
                                                        ).first()
                     L0_name = Lx.L0
                     L1_name = Lx.L1
@@ -5671,7 +5681,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                        table.L3,
                                                        table.lat,
                                                        table.lon,
-                                                       limitby=(0, 1)
+                                                       limitby = (0, 1)
                                                        ).first()
                     L0_name = Lx.L0
                     L1_name = Lx.L1
@@ -5696,7 +5706,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                        table.L2,
                                                        table.lat,
                                                        table.lon,
-                                                       limitby=(0, 1)
+                                                       limitby = (0, 1)
                                                        ).first()
                     L0_name = Lx.L0
                     L1_name = Lx.L1
@@ -5718,7 +5728,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                                                        table.L1,
                                                        table.lat,
                                                        table.lon,
-                                                       limitby=(0, 1)
+                                                       limitby = (0, 1)
                                                        ).first()
                     L0_name = Lx.L0
                     L1_name = Lx.L1
@@ -5737,7 +5747,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                     Lx = db(table.id == parent).select(table.L0,
                                                        table.lat,
                                                        table.lon,
-                                                       limitby=(0, 1)
+                                                       limitby = (0, 1)
                                                        ).first()
                     L0_name = Lx.L0
             elif Lx.level == "L0":
@@ -5820,7 +5830,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
             elif lon is None or lon == "":
                 form.errors["lon"] = current.messages.lon_empty
             else:
-                form_vars.wkt = "POINT(%(lon)s %(lat)s)" % form_vars
+                form_vars.wkt = "POINT (%(lon)s %(lat)s)" % form_vars
                 radius = form_vars.get("radius", None)
                 if radius:
                     bbox = GIS.get_bounds_from_radius(lat, lon, radius)
@@ -5935,7 +5945,7 @@ page.render('%(filename)s', {format: 'jpeg', quality: '100'});''' % \
                     elif lon is None or lon == "":
                         form.errors["lon"] = current.messages.lon_empty
                     else:
-                        form_vars.wkt = "POINT(%(lon)s %(lat)s)" % form_vars
+                        form_vars.wkt = "POINT (%(lon)s %(lat)s)" % form_vars
                         if "lon_min" not in form_vars or form_vars.lon_min is None:
                             form_vars.lon_min = lon
                         if "lon_max" not in form_vars or form_vars.lon_max is None:
@@ -6807,7 +6817,7 @@ class MAP(DIV):
                 config_id = config.id
                 _config = db(ctable.id == config_id).select(ctable.uuid,
                                                             ctable.name,
-                                                            limitby=(0, 1),
+                                                            limitby = (0, 1),
                                                             ).first()
                 if MAP_ADMIN:
                     i18n["gis_my_maps"] = T("Saved Maps")
@@ -7032,7 +7042,7 @@ class MAP(DIV):
                     (ltable.base == True) & \
                     (ltable.enabled == True)
             layers = db(query).select(*fields,
-                                      limitby=(0, 1))
+                                      limitby = (0, 1))
             if not layers:
                 # Just show EmptyLayer
                 layer_types = [LayerEmpty]
@@ -7789,7 +7799,7 @@ def addFeatureQueries(feature_queries):
                 marker = db(mtable.id == marker).select(mtable.image,
                                                         mtable.height,
                                                         mtable.width,
-                                                        limitby=(0, 1),
+                                                        limitby = (0, 1),
                                                         cache=cache
                                                         ).first()
             if marker:
@@ -7892,7 +7902,7 @@ def addFeatureResources(feature_resources):
                                    stable.cluster_threshold,
                                    stable.style,
                                    left=left,
-                                   limitby=(0, 1),
+                                   limitby = (0, 1),
                                    orderby=orderby,
                                    ).first()
             _dir = layer.get("dir", row["gis_layer_config.dir"])
@@ -7927,22 +7937,31 @@ def addFeatureResources(feature_resources):
                 style = _style.style
             #url_format = _style.url_format
 
+            # Parameters for Layer URL (in addition to any filters)
+            params = layer.get("custom_params") or {}
+            params.update({"layer": row.layer_id,
+                           "show_ids": "true",
+                           })
             aggregate = layer.get("aggregate", row.aggregate)
             if aggregate:
-                url = "%s.geojson?layer=%i&show_ids=true" % \
-                    (URL(c=row.controller, f=row.function, args="report"),
-                     row.layer_id)
+                url = URL(c = row.controller,
+                          f = row.function,
+                          args = ["report.geojson"],
+                          vars = params,
+                          )
                 #if not url_format:
                 # Use gis/location controller in all reports
                 url_format = "%s/{id}.plain" % URL(c="gis", f="location")
             else:
-                _url = URL(c=row.controller, f=row.function)
-                url = "%s.geojson?layer=%i&components=None&show_ids=true&maxdepth=%s" % \
-                    (_url,
-                     row.layer_id,
-                     maxdepth)
-                #if not url_format:
-                url_format = "%s/{id}.plain" % _url
+                params.update({"mcomponents": "None",
+                               "maxdepth": maxdepth,
+                               })
+                url = URL(c = row.controller,
+                          f = "%s.geojson" % row.function,
+                          vars = params,
+                          )
+                #if not url_format
+                url_format = "%s/{id}.plain" % URL(c = row.controller, f = row.function)
 
             # Use specified filter or fallback to the one in the layer
             _filter = layer.get("filter", row.filter)
@@ -7987,7 +8006,7 @@ def addFeatureResources(feature_resources):
                 # Not much we can do!
                 # @ToDo: Use Context
                 continue
-            options = "components=None&maxdepth=%s&show_ids=true" % maxdepth
+            options = "mcomponents=None&maxdepth=%s&show_ids=true" % maxdepth
             if "?" in url:
                 url = "%s&%s" % (url, options)
             else:
@@ -8465,7 +8484,7 @@ class LayerFeature(Layer):
                     maxdepth = 0
                 _url = URL(self.controller, self.function)
                 # id is used for url_format
-                url = "%s.geojson?layer=%i&components=None&maxdepth=%s&show_ids=true" % \
+                url = "%s.geojson?layer=%i&mcomponents=None&maxdepth=%s&show_ids=true" % \
                     (_url,
                      self.layer_id,
                      maxdepth)
@@ -8600,7 +8619,7 @@ class LayerGeoRSS(Layer):
             download = True
             query = (cachetable.source == url)
             existing_cached_copy = db(query).select(cachetable.modified_on,
-                                                    limitby=(0, 1)).first()
+                                                    limitby = (0, 1)).first()
             refresh = self.refresh or 900 # 15 minutes set if we have no data (legacy DB)
             if existing_cached_copy:
                 modified_on = existing_cached_copy.modified_on
@@ -8893,7 +8912,7 @@ class LayerKML(Layer):
                 download = True
                 query = (cachetable.name == name)
                 cached = db(query).select(cachetable.modified_on,
-                                          limitby=(0, 1)).first()
+                                          limitby = (0, 1)).first()
                 refresh = self.refresh or 900 # 15 minutes set if we have no data (legacy DB)
                 if cached:
                     modified_on = cached.modified_on
@@ -9020,31 +9039,28 @@ class LayerOpenWeatherMap(Layer):
     """
 
     tablename = "gis_layer_openweathermap"
-    dictname = "OWM"
+    dictname = "layers_openweathermap"
     style = False
 
     # -------------------------------------------------------------------------
     def as_dict(self, options=None):
         sublayers = self.sublayers
         if sublayers:
-            if current.response.s3.debug:
-                self.scripts.append("gis/OWM.OpenLayers.js")
-            else:
-                self.scripts.append("gis/OWM.OpenLayers.min.js")
+            apikey = current.deployment_settings.get_gis_api_openweathermap()
+            if not apikey:
+                # Raising exception prevents gis/index view from loading
+                # - logging the error should suffice?
+                #raise Exception("Cannot display OpenWeatherMap layers unless we have an API key\n")
+                current.log.error("Cannot display OpenWeatherMap layers unless we have an API key")
+                return {}
+            current.response.s3.js_global.append("S3.gis.openweathermap='%s'" % apikey)
             ldict = {}
             for sublayer in sublayers:
-                if sublayer.type == "station":
-                    ldict["station"] = {"name": sublayer.name or "Weather Stations",
+                ldict[sublayer.type] = {"name": sublayer.name,
                                         "id": sublayer.layer_id,
                                         "dir": sublayer.dir,
                                         "visibility": sublayer.visible
                                         }
-                elif sublayer.type == "city":
-                    ldict["city"] = {"name": sublayer.name or "Current Weather",
-                                     "id": sublayer.layer_id,
-                                     "dir": sublayer.dir,
-                                     "visibility": sublayer.visible
-                                     }
             if options:
                 # Used by Map._setup()
                 options[self.dictname] = ldict
@@ -9344,7 +9360,7 @@ class Marker(object):
                 marker = db(mtable.id == marker_id).select(mtable.image,
                                                            mtable.height,
                                                            mtable.width,
-                                                           limitby=(0, 1),
+                                                           limitby = (0, 1),
                                                            cache=s3db.cache
                                                            ).first()
             elif layer_id:
@@ -9359,7 +9375,7 @@ class Marker(object):
                 marker = db(query).select(mtable.image,
                                           mtable.height,
                                           mtable.width,
-                                          limitby=(0, 1)).first()
+                                          limitby = (0, 1)).first()
 
         if not marker:
             # Check to see if we're a Polygon/LineString
@@ -9368,14 +9384,14 @@ class Marker(object):
                 table = db.gis_layer_shapefile
                 query = (table.layer_id == layer_id)
                 layer = db(query).select(table.gis_feature_type,
-                                         limitby=(0, 1)).first()
+                                         limitby = (0, 1)).first()
                 if layer and layer.gis_feature_type != 1:
                     no_default = True
             #elif tablename == "gis_layer_feature":
             #    table = db.gis_layer_feature
             #    query = (table.layer_id == layer_id)
             #    layer = db(query).select(table.polygons,
-            #                             limitby=(0, 1)).first()
+            #                             limitby = (0, 1)).first()
             #    if layer and layer.polygons:
             #       no_default = True
 
@@ -9616,13 +9632,16 @@ class S3Map(S3Method):
             @return: output object to send to the view
         """
 
+        output = None
+
         if r.http == "GET":
             representation = r.representation
             if representation == "html":
-                return self.page(r, **attr)
-
+                output = self.page(r, **attr)
         else:
             r.error(405, current.ERROR.BAD_METHOD)
+
+        return output
 
     # -------------------------------------------------------------------------
     def page(self, r, **attr):
@@ -9633,6 +9652,8 @@ class S3Map(S3Method):
             @param attr: controller attributes for the request
         """
 
+        output = {}
+
         if r.representation in ("html", "iframe"):
 
             response = current.response
@@ -9641,8 +9662,6 @@ class S3Map(S3Method):
             tablename = resource.tablename
 
             widget_id = "default_map"
-
-            output = {}
 
             title = self.crud_string(tablename, "title_map")
             output["title"] = title
@@ -9689,18 +9708,18 @@ class S3Map(S3Method):
             # View
             response.view = self._view(r, "map.html")
 
-            return output
-
         else:
             r.error(415, current.ERROR.BAD_FORMAT)
+
+        return output
 
     # -------------------------------------------------------------------------
     def widget(self,
                r,
-               method="map",
-               widget_id=None,
-               visible=True,
-               callback=None,
+               method = "map",
+               widget_id = None,
+               visible = True,
+               callback = None,
                **attr):
         """
             Render a Map widget suitable for use in an S3Filter-based page
@@ -9745,19 +9764,25 @@ class S3Map(S3Method):
             prefix, name = tablename.split("_", 1)
             layer_id = lookup_layer(prefix, name)
 
+        # This URL is ignored if we have a layer_id:
         url = URL(extension="geojson", args=None, vars=r.get_vars)
+
+        # Retain any custom filter parameters for the layer lookup
+        custom_params = {k: v for k, v in r.get_vars.items() if k[:2] == "$$"}
 
         # @ToDo: Support maps with multiple layers (Dashboards)
         #_id = "search_results_%s" % widget_id
         _id = "search_results"
-        feature_resources = [{"name"      : current.T("Search Results"),
-                              "id"        : _id,
-                              "layer_id"  : layer_id,
-                              "tablename" : tablename,
-                              "url"       : url,
+        feature_resources = [{"name"          : current.T("Search Results"),
+                              "id"            : _id,
+                              "layer_id"      : layer_id,
+                              "tablename"     : tablename,
+                              "url"           : url,
+                              "custom_params" : custom_params,
                               # We activate in callback after ensuring URL is updated for current filter status
-                              "active"    : False,
+                              "active"        : False,
                               }]
+
         settings = current.deployment_settings
         catalogue_layers = settings.get_gis_widget_catalogue_layers()
         legend = settings.get_gis_legend()
@@ -9773,18 +9798,18 @@ class S3Map(S3Method):
             else:
                 wms_browser = None
 
-        map = gis.show_map(id = widget_id,
-                           feature_resources = feature_resources,
-                           catalogue_layers = catalogue_layers,
-                           collapsed = True,
-                           legend = legend,
-                           toolbar = toolbar,
-                           save = False,
-                           search = search,
-                           wms_browser = wms_browser,
-                           callback = callback,
-                           )
-        return map
+        map_widget = gis.show_map(id = widget_id,
+                                  feature_resources = feature_resources,
+                                  catalogue_layers = catalogue_layers,
+                                  collapsed = True,
+                                  legend = legend,
+                                  toolbar = toolbar,
+                                  save = False,
+                                  search = search,
+                                  wms_browser = wms_browser,
+                                  callback = callback,
+                                  )
+        return map_widget
 
 # =============================================================================
 class S3ExportPOI(S3Method):
@@ -9945,7 +9970,7 @@ class S3ExportPOI(S3Method):
             # Get the feed data
             query = (ftable.tablename == tablename) & \
                     (ftable.location_id == lx)
-            feed = db(query).select(limitby=(0, 1)).first()
+            feed = db(query).select(limitby = (0, 1)).first()
             if msince == "auto":
                 if feed is None:
                     _msince = None
@@ -9955,8 +9980,9 @@ class S3ExportPOI(S3Method):
                 _msince = msince
 
             # Export the tree and append its element to the element list
-            tree = resource.export_tree(msince=_msince,
-                                        references=["location_id"])
+            tree = S3ResourceTree(resource).build(msince = msince,
+                                                  references = ["location_id"],
+                                                  )
 
             # Update the feed data
             if update_feed:
@@ -10095,7 +10121,7 @@ class S3ImportPOI(S3Method):
                         gtable = s3db.gis_location
                         record = current.db(gtable.id == form_vars.location_id).select(gtable.name,
                                                                                        gtable.wkt,
-                                                                                       limitby=(0, 1)
+                                                                                       limitby = (0, 1)
                                                                                        ).first()
                         if record.wkt is None:
                             form.errors["location_id"] = T("Location needs to have WKT!")

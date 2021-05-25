@@ -283,7 +283,7 @@ def config(settings):
     # Now using req_need, so unused:
     #settings.req.req_type = ("People",)
 
-    # -----------------------------------------------------------------------------
+    # -------------------------------------------------------------------------
     def ccc_person_anonymize():
         """ Rules to anonymise a person """
 
@@ -408,7 +408,7 @@ def config(settings):
 
         return rules
 
-    # -----------------------------------------------------------------------------
+    # -------------------------------------------------------------------------
     def ccc_user_anonymize():
         """ Rules to anonymise a user """
 
@@ -693,7 +693,6 @@ def config(settings):
         T = current.T
 
         if tablename == "hrm_training_event":
-            T = current.T
             auth = current.auth
             has_role = auth.s3_has_role
             if has_role("ADMIN") or \
@@ -763,11 +762,11 @@ def config(settings):
                               rheader_tabs)
 
         elif tablename == "org_organisation":
-            T = current.T
             tabs = [(T("Basic Details"), None),
                     (T("Area Served"), "location"),
                     #(T("Offices"), "office"),
                     (T("Key Locations"), "facility"),
+                    (T("Documents"), "document"),
                     (T("Volunteers"), "human_resource"),
                     ]
             rheader_tabs = s3_rheader_tabs(r, tabs)
@@ -819,7 +818,6 @@ $('.copy-link').click(function(e){
                           rheader_tabs)
 
         elif tablename == "pr_group":
-            T = current.T
             tabs = [(T("Basic Details"), None),
                     # 'Person' allows native tab breakout
                     #(T("Members"), "group_membership"),
@@ -838,7 +836,6 @@ $('.copy-link').click(function(e){
                           rheader_tabs)
 
         elif tablename == "pr_person":
-            T = current.T
             controller = r.controller
             if controller == "br":
                 tabs = [(T("Basic Details"), None),
@@ -912,7 +909,6 @@ $('.copy-link').click(function(e){
                           rheader_tabs)
 
         elif tablename == "req_need":
-            T = current.T
             auth = current.auth
             db = current.db
             s3db = current.s3db
@@ -1061,6 +1057,71 @@ $('.copy-link').click(function(e){
     settings.auth.remove_role = auth_remove_role
 
     # -------------------------------------------------------------------------
+    def auth_user_ondisable(user_id):
+        """
+            If a Volunteer is disabled then:
+                - remove their Organisation affiliation (if-any)
+                - move them to Inactives
+        """
+
+        db = current.db
+
+        # Are they a Volunteer?
+        gtable = db.auth_group
+        mtable = db.auth_membership
+        query = (gtable.uuid.belongs(("RESERVE", "VOLUNTEER"))) & \
+                (gtable.id == mtable.group_id) & \
+                (mtable.user_id == user_id)
+        volunteer = db(query).select(mtable.id,
+                                     limitby = (0, 1)
+                                     ).first()
+        if not volunteer:
+            # Nothing to do
+            return
+
+        auth = current.auth
+        s3db = current.s3db
+
+        # Lookup person_id
+        ltable = s3db.pr_person_user
+        ptable = s3db.pr_person
+        query = (ltable.user_id == user_id) & \
+                (ltable.pe_id == ptable.pe_id)
+        person = db(query).select(ptable.id,
+                                  limitby = (0, 1)
+                                  ).first()
+        person_id = person.id
+
+        # Remove Organisation Affiliation if-any
+        htable = s3db.hrm_human_resource
+        query = (htable.person_id == person_id) & \
+                (htable.deleted == False)
+        hr = db(query).select(htable.id,
+                              limitby = (0, 1)
+                              ).first()
+        if hr:
+            resource = s3db.resource("hrm_human_resource", id = hr.id)
+            resource.delete()
+            db(db.auth_user.id == user_id).update(organisation_id = None)
+            auth.s3_withdraw_role(user_id, "VOLUNTEER", for_pe=[])
+
+        # Move to Inactives
+
+        # Update Tag
+        ttable = s3db.pr_person_tag
+        query = (ttable.person_id == person_id) & \
+                (ttable.tag == "reserve")
+        db(query).update(value = 0)
+
+        # Set Realm to Inactives Forum
+        ftable = s3db.pr_forum
+        forum = db(ftable.name == "Inactives").select(ftable.pe_id,
+                                                      limitby = (0, 1)
+                                                      ).first()
+        realm_entity = forum.pe_id
+        auth.set_realm_entity("pr_person", person_id, entity=realm_entity, force_update=True)
+
+    # -------------------------------------------------------------------------
     def customise_auth_user_resource(r, tablename):
         """
             Hook in custom auth_user_register_onaccept for use when Agency/Existing Users are Approved
@@ -1069,6 +1130,7 @@ $('.copy-link').click(function(e){
         from templates.CCC.controllers import auth_user_register_onaccept
 
         current.s3db.configure("auth_user",
+                               ondisable = auth_user_ondisable,
                                register_onaccept = auth_user_register_onaccept,
                                )
 
@@ -1097,7 +1159,7 @@ $('.copy-link').click(function(e){
                             method = "anonymize",
                             action = S3AnonymizeBulk,
                             )
-        
+
         args = current.request.args
         if not len(args):
             if not ADMIN:
@@ -1243,7 +1305,7 @@ $('.copy-link').click(function(e){
 
                     list_fields = r.resource.get_config("list_fields")
                     list_fields.append((T("Consent"), "consent"))
-                if r.method != "import" and r.http == "POST":
+                if r.http == "POST" and r.method not in ("import", "deduplicate"):
                     post_vars = r.post_vars
                     if "selected" in post_vars:
                         # Bulk Action 'Anonymize' has been selected
@@ -1455,8 +1517,14 @@ $('.copy-link').click(function(e){
         else:
             f.readable = f.writable = True
 
+        if r.controller == "doc":
+            create_next = URL(args="datalist")
+        else:
+            # Org Component Tab
+            create_next = None
+
         s3db.configure("doc_document",
-                       create_next = URL(args="datalist"),
+                       create_next = create_next,
                        crud_form = S3SQLCustomForm("organisation_id",
                                                    (T("Type"), "document_type.value"),
                                                    (T("Document Name"), "name"),
@@ -1908,7 +1976,7 @@ $('.copy-link').click(function(e){
             else:
                 result = True
 
-            if r.method != "import" and r.http == "POST":
+            if r.http == "POST" and r.method not in ("import", "deduplicate"):
                 post_vars = r.post_vars
                 if "selected" in post_vars:
                     # Bulk Action 'Message' has been selected
@@ -2320,7 +2388,7 @@ $('.copy-link').click(function(e){
         trainings = current.db(query).select(ttable.person_id)
         selected = [t.person_id for t in trainings]
 
-        # Sent Reminders async as it may take some time to run
+        # Send Reminders async as it may take some time to run
         current.s3task.run_async("settings_task",
                                  args = ["hrm_training_event_notification"],
                                  vars = {"record": r.record.as_json(),
@@ -2446,22 +2514,22 @@ $('.copy-link').click(function(e){
                 exists.update_record(start_time = start_time)
         else:
             current.s3task.schedule_task("settings_task",
-                                 args = ["hrm_training_event_reminder_day"],
-                                 vars = {"record_id": training_event_id},
-                                 start_time = start_time,
-                                 #period = 300,  # seconds
-                                 timeout = 300, # seconds
-                                 repeats = 1    # run once
-                                 )
+                                         args = ["hrm_training_event_reminder_day"],
+                                         vars = {"record_id": training_event_id},
+                                         start_time = start_time,
+                                         #period = 300,  # seconds
+                                         timeout = 300, # seconds
+                                         repeats = 1    # run once
+                                         )
 
     # -------------------------------------------------------------------------
     def customise_hrm_training_event_resource(r, tablename):
 
         from gluon import IS_EMAIL, IS_EMPTY_OR, IS_IN_SET, IS_NOT_EMPTY, IS_URL
-        from s3 import IS_UTC_DATETIME, \
+        from s3 import IS_PHONE_NUMBER_MULTI, IS_UTC_DATETIME, \
                        S3SQLInlineLink, S3LocationSelector, \
-                       S3OptionsFilter, S3SQLCustomForm, S3TextFilter, \
-                       s3_phone_requires
+                       S3OptionsFilter, S3SQLCustomForm, S3TextFilter
+
 
         current.response.s3.crud_strings[tablename] = Storage(
             label_create = T("New Event"),
@@ -2518,7 +2586,7 @@ $('.copy-link').click(function(e){
 
         contact_tel = components_get("contact_tel")
         f = contact_tel.table.value
-        f.requires = IS_EMPTY_OR(s3_phone_requires)
+        f.requires = IS_EMPTY_OR(IS_PHONE_NUMBER_MULTI())
 
         contact_email = components_get("contact_email")
         f = contact_email.table.value
@@ -2536,8 +2604,11 @@ $('.copy-link').click(function(e){
         f = table.location_id
         f.readable = f.writable = True
         f.widget = S3LocationSelector(levels = ("L3", "L4"),
+                                      #levels = ("L2", "L3", "L4"),
                                       required_levels = ("L3",),
-                                      show_address = True)
+                                      show_address = True,
+                                      #show_map = False,
+                                      )
 
         list_fields = ["start_date",
                        "name",
@@ -3075,7 +3146,19 @@ $('.copy-link').click(function(e){
                 r.resource.add_filter(rfilter)
 
             if r.id:
-                if r.component_name == "location":
+                if r.component_name == "document":
+                    r.method = "datalist"
+                    # Filter out attachments
+                    ttable = current.s3db.project_task
+                    # @ToDo: Optimise list
+                    tasks = current.db(ttable.id > 0).select(ttable.doc_id)
+                    tasks = [t.doc_id for t in tasks]
+                    from s3 import FS
+                    query = (FS("document.doc_id") == None) | \
+                            ~(FS("document.doc_id").belongs(tasks))
+                    r.resource.add_component_filter("document", query)
+
+                elif r.component_name == "location":
                     from s3 import S3LocationSelector
                     s3db.org_organisation_location.location_id.widget = S3LocationSelector(levels = ("L3", "L4"),
                                                                                            required_levels = ("L3",),
@@ -3090,7 +3173,7 @@ $('.copy-link').click(function(e){
                                                   ],
                                    )
 
-            elif r.method != "import" and r.http == "POST":
+            elif r.http == "POST" and r.method not in ("import", "deduplicate"):
                 post_vars = r.post_vars
                 if "selected" in post_vars:
                     # Bulk Action 'Message' has been selected
@@ -3295,9 +3378,9 @@ $('.copy-link').click(function(e){
 
         from gluon import IS_EMPTY_OR, IS_IN_SET, IS_INT_IN_RANGE, IS_NOT_EMPTY, \
                           SQLFORM
-        from s3 import IS_INT_AMOUNT, S3OptionsFilter, S3Represent, \
-                       S3SQLCustomForm, S3SQLInlineLink, S3TextFilter, \
-                       s3_phone_requires#, S3LocationSelector
+        from s3 import IS_INT_AMOUNT, IS_PHONE_NUMBER_MULTI, \
+                       S3OptionsFilter, S3Represent, S3SQLCustomForm, \
+                       S3SQLInlineLink, S3TextFilter#, S3LocationSelector
 
         s3db = current.s3db
 
@@ -3372,7 +3455,7 @@ $('.copy-link').click(function(e){
 
         contact_number = components_get("contact_number")
         f = contact_number.table.value
-        f.requires = s3_phone_requires
+        f.requires = IS_PHONE_NUMBER_MULTI()
 
         f = s3db.pr_group_location.location_id
         f.represent = S3Represent(lookup = "gis_location")
@@ -4039,7 +4122,7 @@ $('.copy-link').click(function(e){
                                     (stable.deleted == False)
                             rows = db(query).select(stable.id)
                             nhs_skill_ids = [row.id for row in rows]
-                            
+
                             s3db.add_components("pr_person",
                                                 hrm_competency = {"name": "nhs_offer",
                                                                   "joinby": "person_id",
@@ -4191,7 +4274,7 @@ $('.copy-link').click(function(e){
                         #               ]
                         #r.component.configure(list_fields = list_fields)
 
-                    
+
                     elif r.component_name == "location":
                         from s3 import S3LocationSelector
                         s3db.pr_person_location.location_id.widget = S3LocationSelector(levels = ("L3", "L4"),
@@ -4214,7 +4297,7 @@ $('.copy-link').click(function(e){
                                                                                                        ],
                                                                                         )
 
-                elif r.method != "import" and r.http == "POST":
+                elif r.http == "POST" and r.method not in ("import", "deduplicate"):
                     post_vars = r.post_vars
                     if "selected" in post_vars:
                         # Bulk Action 'Message' has been selected
@@ -4249,7 +4332,7 @@ $('.copy-link').click(function(e){
                                      args = "create",
                                      vars = {"person_ids": 1},
                                      ))
-                    
+
                 if HRM or PROFILE:
                     # Organisation Volunteers
                     # (only used for hrm/person profile)
@@ -4279,6 +4362,9 @@ $('.copy-link').click(function(e){
                                                                                                      cache = s3db.cache)
                     #districts = {d.id:d.name for d in districts}
                     districts = {d.name:d.name for d in districts}
+
+                    from s3 import S3DateTime
+                    s3db.pr_person.created_on.represent = lambda v: S3DateTime.date_represent(v, utc=True)
 
                     list_fields = ["first_name",
                                    "middle_name",
@@ -4347,11 +4433,12 @@ $('.copy-link').click(function(e){
                             #f = convictions.table.value
                             #f.represent = S3Represent(options = yes_no_options)
                             #list_fields.append((T("Convictions"), "convictions.value"))
-                            # Registration Date
-                            from s3 import S3DateTime
-                            s3db.pr_person.created_on.represent = lambda dt: \
-                                      S3DateTime.datetime_represent(dt, utc=True)
-                            list_fields.append((T("Registration Date"), "created_on"))
+
+                    # Registration Date
+                    from s3 import S3DateTime
+                    s3db.pr_person.created_on.represent = lambda dt: \
+                              S3DateTime.datetime_represent(dt, utc=True)
+                    list_fields.append((T("Date Registered"), "created_on"))
 
                     from s3 import S3EmptyFilter, S3OptionsFilter, S3TextFilter
                     filter_widgets = [S3TextFilter(["first_name",
@@ -4540,7 +4627,7 @@ $('.copy-link').click(function(e){
 
         request_args = request.args
         len_request_args = len(request_args)
-        if len_request_args is 0 and request.get_vars.get("inactive") is None:
+        if len_request_args == 0 and request.get_vars.get("inactive") == None:
             # Add Bulk Messaging to List View
             dtargs["dt_bulk_actions"] = [(T("Message"), "message")]
 
@@ -4608,26 +4695,26 @@ $('.copy-link').click(function(e){
     settings.customise_pr_person_location_resource = customise_pr_person_location_resource
 
     # -------------------------------------------------------------------------
-    def project_task_postprocess(form):
+    def project_task_postprocess_async(task_id,
+                                       subject,
+                                       message,
+                                       person_ids = None,
+                                       hr_ids = None,
+                                       organisation_ids = None,
+                                       person_item_id = None,
+                                       organisation_id = None,
+                                       ):
         """
+            Async part of postprocess
+
             When a Task is created:
                 * Duplicate Message if needs to be accessible to multiple Organisations
                 * Set Realm Entity
                 * Send Email
         """
 
-        if form.record:
-            # Update
-            return
-
         public_url = settings.get_base_public_url()
 
-        form_vars_get = form.vars.get
-        task_id = form_vars_get("id")
-
-        subject = form_vars_get("name")
-
-        message = form_vars_get("description")
         if message is None:
             message = ""
         else:
@@ -4669,20 +4756,8 @@ $('.copy-link').click(function(e){
                 attachments.append(Mail.Attachment(os_path_join(uploadfolder, filename), filename=origname))
 
         # Check what kind of message this is
-        get_vars_get = current.request.get_vars.get
-
-        person_ids = get_vars_get("person_ids")
         if person_ids is not None:
             # Sending to a list of People from the Bulk Action
-
-            # Retrieve list from the session
-            session = current.session
-            person_ids = session.s3.get("ccc_message_person_ids")
-            if person_ids is None:
-                session.warning = current.T("No people selected to send notifications to!")
-                return
-            # Clear from session
-            del session.s3["ccc_message_person_ids"]
 
             auth = current.auth
             user = auth.user
@@ -4727,7 +4802,7 @@ $('.copy-link').click(function(e){
             if len(person_ids) < 5:
                 # Track individuals in the To: field
                 from s3 import s3_fullname
-                
+
                 # Lookup Emails & Names
                 ptable = s3db.pr_person
                 ctable = s3db.pr_contact
@@ -4753,7 +4828,7 @@ $('.copy-link').click(function(e){
             else:
                 # Bulk label
                 to_label = "Reserve(s)"
-            
+
                 # Lookup Emails
                 ptable = s3db.pr_person
                 ctable = s3db.pr_contact
@@ -4788,18 +4863,8 @@ $('.copy-link').click(function(e){
 
             return
 
-        hr_ids = get_vars_get("hr_ids")
         if hr_ids is not None:
             # Sending to a list of HRs from the Bulk Action
-
-            # Retrieve list from the session
-            session = current.session
-            hr_ids = session.s3.get("ccc_message_hr_ids")
-            if hr_ids is None:
-                session.warning = current.T("No people selected to send notifications to!")
-                return
-            # Clear from session
-            del session.s3["ccc_message_hr_ids"]
 
             auth = current.auth
             user = auth.user
@@ -4844,7 +4909,7 @@ $('.copy-link').click(function(e){
             if len(hr_ids) < 5:
                 # Track individuals in the To: field
                 from s3 import s3_fullname
-                
+
                 # Lookup Emails & Names
                 htable = s3db.hrm_human_resource
                 ptable = s3db.pr_person
@@ -4872,7 +4937,7 @@ $('.copy-link').click(function(e){
             else:
                 # Bulk label
                 to_label = "Community Volunteer(s)"
-            
+
                 # Lookup Emails
                 htable = s3db.hrm_human_resource
                 ptable = s3db.pr_person
@@ -4944,7 +5009,6 @@ $('.copy-link').click(function(e){
                      fullname,
                      )
 
-        organisation_ids = get_vars_get("o")
         if organisation_ids is not None:
             # Sending to a list of Organisations from the Bulk Action
             tag_table = s3db.project_task_tag
@@ -4964,8 +5028,6 @@ $('.copy-link').click(function(e){
                              tag = "to",
                              value = "Organisation(s)",
                              )
-
-            organisation_ids = organisation_ids.split(",")
 
             # Lookup the ORG_ADMINs
             gtable = db.auth_group
@@ -5042,7 +5104,6 @@ $('.copy-link').click(function(e){
                                  )
             return
 
-        person_item_id = get_vars_get("person_item_id")
         if person_item_id is not None:
             # Sending to a Donor
 
@@ -5104,9 +5165,10 @@ $('.copy-link').click(function(e){
                                          )
 
             return
-            
+
         # Use the Organisation we request or fallback to the User's Organisation
-        organisation_id = get_vars_get("organisation_id", user.organisation_id)
+        if organisation_id is None:
+            organisation_id = user.organisation_id
 
         tag_table = s3db.project_task_tag
 
@@ -5177,7 +5239,7 @@ $('.copy-link').click(function(e){
                 (mtable.user_id == utable.id) & \
                 (utable.organisation_id == organisation_id)
         org_admins = db(query).select(utable.email)
-        
+
         # Send message to each
         send_email = current.msg.send_email
         for admin in org_admins:
@@ -5186,6 +5248,102 @@ $('.copy-link').click(function(e){
                        message = message,
                        attachments = attachments,
                        )
+
+    settings.tasks.project_task_postprocess_async = project_task_postprocess_async
+
+    # -------------------------------------------------------------------------
+    def project_task_postprocess(form):
+        """
+            Read environment to pass to async task
+        """
+
+        if form.record:
+            # Update
+            return
+
+        session = current.session
+
+        form_vars_get = form.vars.get
+        task_id = form_vars_get("id")
+        subject = form_vars_get("name")
+        message = form_vars_get("description")
+
+        # Check what kind of message this is
+        get_vars_get = current.request.get_vars.get
+
+        person_ids = get_vars_get("person_ids")
+        if person_ids is not None:
+            # Retrieve list from the session
+            person_ids = session.s3.get("ccc_message_person_ids")
+            # Send async
+            current.s3task.run_async("settings_task",
+                                     args = ["project_task_postprocess_async"],
+                                     vars = {"task_id": task_id,
+                                             "subject": subject,
+                                             "message": message,
+                                             "person_ids": person_ids,
+                                             }
+                                     )
+            # Clear from session
+            del session.s3["ccc_message_person_ids"]
+
+        else:
+            hr_ids = get_vars_get("hr_ids")
+            if hr_ids is not None:
+                # Retrieve list from the session
+                hr_ids = session.s3.get("ccc_message_hr_ids")
+                # Send async
+                current.s3task.run_async("settings_task",
+                                         args = ["project_task_postprocess_async"],
+                                         vars = {"task_id": task_id,
+                                                 "subject": subject,
+                                                 "message": message,
+                                                 "hr_ids": hr_ids,
+                                                 }
+                                         )
+                # Clear from session
+                del session.s3["ccc_message_hr_ids"]
+
+            else:
+                organisation_ids = get_vars_get("o")
+                if organisation_ids is not None:
+                    # @ToDo: Switch to using Session?
+                    organisation_ids = organisation_ids.split(",")
+                    # Send async
+                    current.s3task.run_async("settings_task",
+                                             args = ["project_task_postprocess_async"],
+                                             vars = {"task_id": task_id,
+                                                     "subject": subject,
+                                                     "message": message,
+                                                     "organisation_ids": organisation_ids,
+                                                     }
+                                             )
+
+                else:
+                    person_item_id = get_vars_get("person_item_id")
+                    if person_item_id is not None:
+                        # Send async
+                        current.s3task.run_async("settings_task",
+                                                 args = ["project_task_postprocess_async"],
+                                                 vars = {"task_id": task_id,
+                                                         "subject": subject,
+                                                         "message": message,
+                                                         "person_item_id": person_item_id,
+                                                         }
+                                                 )
+
+                    else:
+                        # Send async
+                        current.s3task.run_async("settings_task",
+                                                 args = ["project_task_postprocess_async"],
+                                                 vars = {"task_id": task_id,
+                                                         "subject": subject,
+                                                         "message": message,
+                                                         "organisation_id": get_vars_get("organisation_id"),
+                                                         }
+                                                 )
+
+        session.confirmation = T("Message submitted")
 
     # -------------------------------------------------------------------------
     def customise_project_task_resource(r, tablename):
@@ -5472,13 +5630,13 @@ $('.copy-link').click(function(e){
                 exists.update_record(start_time = start_time)
         else:
             current.s3task.schedule_task("settings_task",
-                                 args = ["req_need_reminder_day"],
-                                 vars = {"record_id": need_id},
-                                 start_time = start_time,
-                                 #period = 300,  # seconds
-                                 timeout = 300, # seconds
-                                 repeats = 1    # run once
-                                 )
+                                         args = ["req_need_reminder_day"],
+                                         vars = {"record_id": need_id},
+                                         start_time = start_time,
+                                         #period = 300,  # seconds
+                                         timeout = 300, # seconds
+                                         repeats = 1    # run once
+                                         )
 
     # -------------------------------------------------------------------------
     def req_need_organisation_onaccept(form):

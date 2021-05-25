@@ -2,7 +2,7 @@
 
 """ Resource Import Tools
 
-    @copyright: 2011-2020 (c) Sahana Software Foundation
+    @copyright: 2011-2021 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -58,10 +58,11 @@ from gluon.tools import callback, fetch
 from s3compat import basestring, pickle, urllib2, urlopen, BytesIO, StringIO, HTTPError, URLError
 from s3dal import Field
 from .s3datetime import s3_utc
+from .s3fields import S3Represent
 from .s3rest import S3Method, S3Request
 from .s3resource import S3Resource
-from .s3utils import s3_auth_user_represent_name, s3_get_foreign_key, \
-                     s3_has_foreign_key, s3_mark_required, s3_str, s3_unicode
+from .s3utils import s3_get_foreign_key, s3_has_foreign_key, \
+                     s3_mark_required, s3_str, s3_unicode
 from .s3validators import IS_JSONS3
 
 KNOWN_SPREADSHEET_EXTENSIONS = (".csv", ".xls", ".xlsx", ".xlsm")
@@ -363,7 +364,8 @@ class S3Importer(S3Method):
                                  filename = ofilename,
                                  user_id = current.session.auth.user.id)
                 row = db(query).select(table.id,
-                                       limitby=(0, 1)).first()
+                                       limitby = (0, 1)
+                                       ).first()
                 upload_id = row.id
 
         if not output:
@@ -418,11 +420,11 @@ class S3Importer(S3Method):
                 if single_pass:
                     current.session.confirmation = self.messages.file_uploaded
                     # For a single pass retain the vars from the original URL
-                    next_URL = URL(r=self.request,
-                                   f=self.function,
-                                   args=["import"],
-                                   vars=current.request.get_vars
-                                  )
+                    next_URL = URL(r = self.request,
+                                   f = self.function,
+                                   args = ["import"],
+                                   vars = current.request.get_vars
+                                   )
                     redirect(next_URL)
                 s3.dataTable_vars = {"job": upload_id}
                 return self.display_job(upload_id)
@@ -946,7 +948,7 @@ $('#import-items').on('click','.toggle-item',function(){$('.importItem.item-'+$(
             This will take a s3_import_upload record and
             generate the importJob
 
-            @param uploadFilename: The name of the uploaded file
+            @param infile: The uploaded file
 
             @todo: complete parameter descriptions
         """
@@ -966,9 +968,16 @@ $('#import-items').on('click','.toggle-item',function(){$('.importItem.item-'+$(
 
         # ---------------------------------------------------------------------
         # XLS
-        elif file_format in ("xls", "xlsx", "xlsm"):
+        elif file_format == "xls":
 
             fmt = "xls"
+            src = infile
+
+        # ---------------------------------------------------------------------
+        # XLSX
+        elif file_format in ("xlsx", "xlsm"):
+
+            fmt = "xlsx"
             src = infile
 
         # ---------------------------------------------------------------------
@@ -1624,15 +1633,15 @@ $('#import-items').on('click','.toggle-item',function(){$('.importItem.item-'+$(
                                                 #"imports"
                                                 )
         messages = self.messages
-        table.file.comment = DIV(_class="tooltip",
-                                 _title="%s|%s" % (messages.import_file,
-                                                   messages.import_file_comment))
+        table.file.comment = DIV(_class = "tooltip",
+                                 _title = "%s|%s" % (messages.import_file,
+                                                     messages.import_file_comment))
         table.file.label = messages.import_file
         table.status.requires = IS_IN_SET(import_upload_status, zero=None)
-        table.status.represent = lambda opt: \
-            import_upload_status.get(opt, current.messages.UNKNOWN_OPT)
+        table.status.represent = S3Represent(options = import_upload_status)
         table.user_id.label = messages.user_name
-        table.user_id.represent = s3_auth_user_represent_name
+        table.user_id.represent = current.s3db.auth_UserRepresent(show_email = False,
+                                                                  show_link = False)
         table.created_on.default = now
         table.created_on.represent = self.date_represent
         table.modified_on.default = now
@@ -4686,8 +4695,12 @@ class S3BulkImporter(object):
         """
 
         # Check if the source file is accessible
+        from s3compat import PY2
         try:
-            openFile = open(filename, "r")
+            if PY2:
+                openFile = open(filename, "r")
+            else:
+                openFile = open(filename, "r", encoding="utf-8")
         except IOError:
             return "Unable to open file %s" % filename
 

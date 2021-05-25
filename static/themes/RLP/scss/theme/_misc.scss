@@ -237,8 +237,9 @@ body.rtl {
         max-width: 100%;
     }
 }
-.ui-widget-content {
+.ui-multiselect-menu {
     max-width: 100%;
+    width: auto!important;
 }
 
 .dvr-response-action-theme {
@@ -301,21 +302,25 @@ body.rtl {
         padding: 0.5rem;
     }
 }
-.auth_register {
-    .subheading {
-        background-color: #EEE;
-        font-size: 1rem;
-        border-top: solid 1px #ccc;
-        border-left: solid 1px #ccc;
-        margin: 0.7rem 0;
-        padding: 0.5rem 0 0.3rem 0.5rem;
-        max-width: 48rem;
-    }
-    .consent-widget {
-        max-width: 48rem;
-    }
+.register-intro {
+    max-width: 60rem;
+    padding: 1rem;
+    border: 1px solid #EEE;
+    background-color: #ec9;
 }
-
+.auth_register {
+    .subheading,
+    .consent-widget,
+    .controls {
+        max-width: 48rem;
+    }
+    padding: 1rem!important;
+}
+.registration-form {
+    position: relative;
+    max-width: 60rem;
+    margin: 1rem auto;
+}
 .sub-label {
     font-weight: normal;
     font-size: 0.8rem;
@@ -323,5 +328,96 @@ body.rtl {
     color: #7f7f7f;
     padding-top: 0.2rem;
 }
+
+.avcomments {
+    font-size: 0.7rem;
+}
+
+.org-account-list {
+    border: 1px solid #eee;
+    padding: 1rem;
+    ul li {
+        font-size: 0.8rem;
+        color: #666;
+    }
+    h4 {
+        font-size: 1rem;
+        font-weight: bold;
+        color: #333;
+    }
+}
+
+.action-btn.organizer-switch {
+    margin-bottom: -1.2em;
+}
+.organizer-alternatives {
+    .action-btn {
+        margin: 0.5rem 0 1rem 0;
+    }
+    .organizer-intro {
+        font-size: 0.8rem;
+        margin: 0.5rem 0 1rem 0;
+        padding: 0.2rem 0.7rem;
+        background: #ffdeb8;
+    }
+}
+
+.status-reason {
+    font-size: 0.725rem;
+    padding: 0.3rem;
+    color: #e10000;
+    border: 1px solid #e10000;
+    font-style: italic;
+    white-space: pre-wrap;
+    background: #ffe1e3;
+}
+
+.record-integrity-ok {
+    color: #008600;
+    i {
+        padding: 0 0.2rem;
+    }
+}
+.record-integrity-broken {
+    color: #aa0000;
+    animation: blinker 0.7s step-start 4;
+    i {
+        padding: 0 0.2rem;
+    }
+}
+
+.service-list {
+    font-size: 0.8rem;
+    list-style-type: disc;
+    list-style-position: inside;
+    padding: 0;
+    margin: 0;
+}
+.approve-form {
+    select {
+        margin: 0;
+    }
+}
+.approve-workflow {
+    &.workflow-red {
+        color: #c42626;
+    }
+    &.workflow-amber {
+        color: #ec8d27;
+    }
+    &.workflow-green {
+        color: green;
+    }
+    &.workflow-advice {
+        border: 1px solid #c42626;
+        background-color: #ffdede;
+        padding: 0.3rem 0.7rem;
+    }
+    .fa {
+        margin-right: 0.2rem;
+    }
+    margin-left: 0.5rem;
+}
+
 
 // END ========================================================================

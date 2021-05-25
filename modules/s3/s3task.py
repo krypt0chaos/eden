@@ -16,7 +16,7 @@
 
     @requires: U{B{I{gluon}} <http://web2py.com>}
 
-    @copyright: 2011-2020 (c) Sahana Software Foundation
+    @copyright: 2011-2021 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -46,10 +46,9 @@ __all__ = ("S3Task",)
 import datetime
 import json
 
-from gluon import current, HTTP, IS_EMPTY_OR, IS_INT_IN_RANGE
+from gluon import current, IS_EMPTY_OR, IS_INT_IN_RANGE
 from gluon.storage import Storage
 
-from s3compat import INTEGER_TYPES, basestring
 from .s3datetime import S3DateTime
 from .s3validators import IS_UTC_DATETIME
 from .s3widgets import S3CalendarWidget, S3TimeIntervalWidget
@@ -108,7 +107,7 @@ class S3Task(object):
         table = current.db[tablename]
 
         # Configure start/stop time fields
-        for fn in ("start_time", "stop_time"):
+        for fn in ("start_time", "stop_time", "next_run_time"):
             field = table[fn]
             field.represent = lambda dt: \
                             S3DateTime.datetime_represent(dt, utc=True)
@@ -119,6 +118,8 @@ class S3Task(object):
             elif fn == "stop_time":
                 field.requires = IS_EMPTY_OR(IS_UTC_DATETIME())
                 set_max = "#scheduler_task_start_time"
+            else:
+                field.requires = IS_UTC_DATETIME()
             field.widget = S3CalendarWidget(past = 0,
                                             set_min = set_min,
                                             set_max = set_max,
@@ -255,58 +256,47 @@ class S3Task(object):
         if vars is None:
             vars = {}
 
-        # Check that task is defined
+        # Check that task is defined (and callable)
         tasks = current.response.s3.tasks
-        if not tasks:
-            return False
-        if task not in tasks:
+        if not tasks or not callable(tasks.get(task)):
             return False
 
-        # Check that worker is alive
+        # Check that args/vars are JSON-serializable
+        try:
+            json.dumps(args)
+        except (ValueError, TypeError):
+            msg = "S3Task.run_async args not JSON-serializable: %s" % args
+            current.log.error(msg)
+            raise
+        try:
+            json.dumps(vars)
+        except (ValueError, TypeError):
+            msg = "S3Task.run_async vars not JSON-serializable: %s" % vars
+            current.log.error(msg)
+            raise
+
+        # Run synchronously if scheduler not running
         if not self._is_alive():
-            # Run the task synchronously
-            _args = []
-            for arg in args:
-                if isinstance(arg, INTEGER_TYPES + (float,)):
-                    _args.append(str(arg))
-                elif isinstance(arg, basestring):
-                    _args.append("%s" % str(json.dumps(arg)))
-                else:
-                    error = "Unhandled arg type: %s" % arg
-                    current.log.error(error)
-                    raise HTTP(501, error)
-            args = ",".join(_args)
-            _vars = ",".join(["%s=%s" % (str(var),
-                                         str(vars[var])) for var in vars])
-            if args:
-                statement = "tasks['%s'](%s,%s)" % (task, args, _vars)
-            else:
-                statement = "tasks['%s'](%s)" % (task, _vars)
-            # Handle JSON
-            false = False
-            null = None
-            true = True
-            exec(statement)
-            return None
+            tasks[task](*args, **vars)
+            return None # No task ID in this case
 
-        auth = current.auth
-        if auth.is_logged_in():
+        # Queue the task (async)
+        try:
             # Add the current user to the vars
-            vars["user_id"] = auth.user.id
+            vars["user_id"] = current.auth.user.id
+        except AttributeError:
+            pass
+        queued = self.scheduler.queue_task(task,
+                                           pargs = args,
+                                           pvars = vars,
+                                           application_name = "%s/default" % \
+                                                              current.request.application,
+                                           function_name = task,
+                                           timeout = timeout,
+                                           )
 
-        # Run the task asynchronously
-        # @ToDo: Switch to API: self.scheduler.queue_task()
-        task_id = current.db.scheduler_task.insert(application_name = "%s/default" % \
-                                                    current.request.application,
-                                                   task_name = task,
-                                                   function_name = task,
-                                                   args = json.dumps(args),
-                                                   vars = json.dumps(vars),
-                                                   timeout = timeout,
-                                                   )
-
-        # Return task_id so that status can be polled
-        return task_id
+        # Return task ID so that status can be polled
+        return queued.id
 
     # -------------------------------------------------------------------------
     def schedule_task(self,
@@ -324,7 +314,9 @@ class S3Task(object):
                       enabled = None, # None = Enabled
                       group_name = None,
                       ignore_duplicate = False,
-                      sync_output = 0):
+                      sync_output = 0,
+                      user_id = True
+                      ):
         """
             Schedule a task in web2py Scheduler
 
@@ -343,6 +335,7 @@ class S3Task(object):
             @param group_name: group_name for the scheduled task
             @param ignore_duplicate: disable or enable duplicate checking
             @param sync_output: sync output every n seconds (0 = disable sync)
+            @param user_id: Add the user_id to task vars if logged in
         """
 
         if args is None:
@@ -400,10 +393,11 @@ class S3Task(object):
         if sync_output != 0:
             kwargs["sync_output"] = sync_output
 
-        auth = current.auth
-        if auth.is_logged_in():
-            # Add the current user to the vars
-            vars["user_id"] = auth.user.id
+        if user_id:
+            auth = current.auth
+            if auth.is_logged_in():
+                # Add the current user to the vars
+                vars["user_id"] = auth.user.id
 
         # Add to DB for pickup by Scheduler task
         # @ToDo: Switch to API: self.scheduler.queue_task()
@@ -463,7 +457,7 @@ class S3Task(object):
         table = db.scheduler_worker
 
         now = datetime.datetime.now()
-        offset = datetime.timedelta(minutes=1)
+        offset = datetime.timedelta(minutes = 1)
 
         query = (table.last_heartbeat > (now - offset))
         cache = current.response.s3.cache
@@ -488,9 +482,10 @@ class S3Task(object):
 
         query = (ttable.id == task_id) & (ttable.status == "FAILED")
         task = db(query).select(ttable.id,
-                                limitby=(0, 1)).first()
+                                limitby = (0, 1)
+                                ).first()
         if task:
-            task.update_record(status="QUEUED")
+            task.update_record(status = "QUEUED")
 
     # =========================================================================
     # Functions run within the Task itself

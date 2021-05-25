@@ -2,7 +2,7 @@
 
 """ Sahana Eden Messaging Model
 
-    @copyright: 2009-2020 (c) Sahana Software Foundation
+    @copyright: 2009-2021 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -610,7 +610,7 @@ class S3MessageContactModel(S3Model):
                                 ),
                           Field("phone",
                                 label = T("Phone"),
-                                requires = IS_EMPTY_OR(s3_phone_requires),
+                                requires = IS_EMPTY_OR(IS_PHONE_NUMBER_MULTI()),
                                 ),
                           Field("from_address",
                                 label = T("Email"),

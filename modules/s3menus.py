@@ -2,7 +2,7 @@
 
 """ Sahana Eden Menu Structure and Layout
 
-    @copyright: 2011-2020 (c) Sahana Software Foundation
+    @copyright: 2011-2021 (c) Sahana Software Foundation
     @license: MIT
 
     Permission is hereby granted, free of charge, to any person
@@ -1775,6 +1775,9 @@ class S3OptionsMenu(object):
         """ PROC / Procurement """
 
         return M(c="proc")(
+                    M("Purchase Orders", f="order")(
+                        M("Create", m="create"),
+                    ),
                     M("Procurement Plans", f="plan")(
                         M("Create", m="create"),
                     ),

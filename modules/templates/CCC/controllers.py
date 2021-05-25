@@ -7,10 +7,11 @@ from collections import OrderedDict
 
 from gluon import *
 from gluon.storage import Storage
-from s3 import FS, ICON, IS_ONE_OF, S3AnonymizeWidget, S3CustomController, S3Method, \
+from s3 import FS, ICON, IS_ONE_OF, IS_PHONE_NUMBER_MULTI, \
+               S3AnonymizeWidget, S3CustomController, S3Method, \
                S3MultiSelectWidget, S3Profile, S3Request, S3SQLCustomForm, \
                s3_avatar_represent, s3_comments_widget, s3_fullname, \
-               s3_mark_required, s3_phone_requires, s3_str, s3_truncate
+               s3_mark_required, s3_str, s3_truncate
 
 SEPARATORS = (",", ":")
 THEME = "CCC"
@@ -52,7 +53,8 @@ class index(S3CustomController):
                 (table.deleted != True)
         item = current.db(query).select(table.body,
                                         table.id,
-                                        limitby=(0, 1)).first()
+                                        limitby = (0, 1)
+                                        ).first()
         if item:
             if ADMIN:
                 item = DIV(XML(item.body),
@@ -64,7 +66,7 @@ class index(S3CustomController):
                                                  "resource": resource,
                                                  },
                                          ),
-                             _class="action-btn",
+                             _class = "action-btn",
                              ),
                            )
             else:
@@ -80,7 +82,7 @@ class index(S3CustomController):
                                          "resource": resource,
                                          },
                                  ),
-                     _class="%s cms-edit" % _class,
+                     _class = "%s cms-edit" % _class,
                      )
         else:
             item = ""
@@ -1275,7 +1277,7 @@ class personAffiliation(S3Method):
                                                     ).first()
             realm_entity = forum.pe_id
             auth.set_realm_entity("pr_person", person_id, entity=realm_entity, force_update=True)
-            
+
             #if reserve == "1":
             #    # Add New Role
             #    auth.s3_assign_role(user_id, "RESERVE", for_pe=realm_entity)
@@ -1358,7 +1360,7 @@ class register(S3CustomController):
                                 ),
                           Field("mobile",
                                 label = T("Contact Number (Preferred)"),
-                                requires = s3_phone_requires,
+                                requires = IS_PHONE_NUMBER_MULTI(),
                                 comment = DIV(_class = "tooltip",
                                               _title = "%s|%s" % (T("Contact Number (Preferred)"),
                                                                   T("Ideally a Mobile Number, so that we can send you Text Messages.")),
@@ -1366,7 +1368,7 @@ class register(S3CustomController):
                                 ),
                           Field("home",
                                 label = T("Contact Number (Secondary)"),
-                                requires = IS_EMPTY_OR(s3_phone_requires),
+                                requires = IS_EMPTY_OR(IS_PHONE_NUMBER_MULTI()),
                                 ),
                           utable.email,
                           utable[passfield],
@@ -1471,7 +1473,7 @@ class register(S3CustomController):
                                 ),
                           Field("emergency_contact_number",
                                 label = T("Contact Number"),
-                                requires = s3_phone_requires,
+                                requires = IS_PHONE_NUMBER_MULTI(),
                                 ),
                           Field("emergency_contact_relationship",
                                 label = T("Relationship"),
@@ -1592,7 +1594,7 @@ class register(S3CustomController):
                                 ),
                           Field("mobile",
                                 label = T("Contact Number (Preferred)"),
-                                requires = s3_phone_requires,
+                                requires = IS_PHONE_NUMBER_MULTI(),
                                 comment = DIV(_class = "tooltip",
                                               _title = "%s|%s" % (T("Contact Number (Preferred)"),
                                                                   T("Ideally a Mobile Number, so that we can send you Text Messages.")),
@@ -1600,7 +1602,7 @@ class register(S3CustomController):
                                 ),
                           Field("home",
                                 label = T("Contact Number (Secondary)"),
-                                requires = IS_EMPTY_OR(s3_phone_requires),
+                                requires = IS_EMPTY_OR(IS_PHONE_NUMBER_MULTI()),
                                 ),
                           utable.email,
                           utable[passfield],
@@ -1631,7 +1633,7 @@ class register(S3CustomController):
                           #      ),
                           #Field("mobile2",
                           #      label = T("Contact Number (Preferred)"),
-                          #      requires = IS_EMPTY_OR(s3_phone_requires),
+                          #      requires = IS_EMPTY_OR(IS_PHONE_NUMBER_MULTI()),
                           #      comment = DIV(_class = "tooltip",
                           #                    _title = "%s|%s" % (T("Contact Number (Preferred)"),
                           #                                        T("Ideally a Mobile Number, so that we can send you Text Messages.")),
@@ -1639,7 +1641,7 @@ class register(S3CustomController):
                           #      ),
                           #Field("home2",
                           #      label = T("Contact Number (Secondary)"),
-                          #      requires = IS_EMPTY_OR(s3_phone_requires),
+                          #      requires = IS_EMPTY_OR(IS_PHONE_NUMBER_MULTI()),
                           #      ),
                           # Consent (GDPR + FOC)
                           Field("consent",
@@ -1842,7 +1844,7 @@ class register(S3CustomController):
                                 ),
                           Field("mobile2",
                                 label = T("Contact Number (Preferred)"),
-                                requires = s3_phone_requires,
+                                requires = IS_PHONE_NUMBER_MULTI(),
                                 comment = DIV(_class = "tooltip",
                                               _title = "%s|%s" % (T("Contact Number (Preferred)"),
                                                                   T("Ideally a Mobile Number, so that we can send you Text Messages.")),
@@ -1850,7 +1852,7 @@ class register(S3CustomController):
                                 ),
                           Field("home2",
                                 label = T("Contact Number (Secondary)"),
-                                requires = IS_EMPTY_OR(s3_phone_requires),
+                                requires = IS_EMPTY_OR(IS_PHONE_NUMBER_MULTI()),
                                 ),
                           Field("password2", "password", length=512,
                                 label = T("Password"),
@@ -1910,7 +1912,7 @@ class register(S3CustomController):
                                 ),
                           Field("emergency_contact_number",
                                 label = T("Contact Number"),
-                                requires = s3_phone_requires,
+                                requires = IS_PHONE_NUMBER_MULTI(),
                                 ),
                           # Consent (GDPR + FOC)
                           Field("consent",
@@ -2907,7 +2909,7 @@ def auth_user_register_onaccept(user_id):
         # Set Realm Entity
         ptable = s3db.pr_person
         db(ptable.pe_id == pe_id).update(realm_entity = realm_entity)
-        
+
         # Create Home Address
         gtable = s3db.gis_location
         record = {# Assume outside Cumbria
