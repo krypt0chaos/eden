@@ -40,6 +40,7 @@ class S3MainMenu(default.S3MainMenu):
         """ Modules Menu """
 
         auth = current.auth
+        settings = current.deployment_settings
 
         has_role = auth.s3_has_role
         has_roles = auth.s3_has_roles
@@ -87,6 +88,9 @@ class S3MainMenu(default.S3MainMenu):
                     MM("Test Stations for School and Child Care Staff",
                        c = "org", f = "facility", m = "summary", vars={"$$code": "TESTS-SCHOOLS"},
                        ),
+                    MM("Test Stations to review",
+                       c = "org", f = "facility", vars={"$$review": "1"}, restrict="ORG_GROUP_ADMIN",
+                       ),
                     MM("Unapproved Test Stations",
                        c = "org", f = "facility", vars={"$$pending": "1"}, restrict="ORG_GROUP_ADMIN",
                        ),
@@ -96,7 +100,8 @@ class S3MainMenu(default.S3MainMenu):
                    ),
                 MM("Register Test Station",
                    c = "default", f = "index", args = ["register"],
-                   check = lambda i: not current.auth.s3_logged_in(),
+                   check = lambda i: settings.get_custom("test_station_registration") and \
+                                     not current.auth.s3_logged_in(),
                    ),
                 ]
 
@@ -358,6 +363,10 @@ class S3OptionsMenu(default.S3OptionsMenu):
         return M(c="org")(
                     org_menu,
                     M("Facilities", f="facility", link=False)(
+                        M("Test Stations to review",
+                          vars = {"$$review": "1"},
+                          restrict = "ORG_GROUP_ADMIN",
+                          ),
                         M("Unapproved Test Stations",
                           vars = {"$$pending": "1"},
                           restrict = "ORG_GROUP_ADMIN",
